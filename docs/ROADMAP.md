@@ -1,18 +1,15 @@
 # Lots de livraison
 
-1. **Fondations** : Next.js, PostgreSQL/Drizzle, Better Auth, création du foyer, invitations, membres, paramètres, thèmes et Docker manuel.
-2. **Pièces et équipements** : CRUD, archivage, réorganisation, photos privées, recherche, filtres et détails.
-3. **Entretien** : tâches, occurrences et historique, calendrier, récurrence fixe ou depuis réalisation, fuseaux et fins de mois testés.
-4. **Courses** : plusieurs listes, liens aux équipements/entretiens, actions rapides mobiles.
-5. **Documents** : originaux privés, validation des signatures/taille, métadonnées, associations, téléchargement autorisé.
-6. **Finitions** : aperçu métier, garanties, recherche globale, export utilisateur et accessibilité.
+1. **Fondations** : comptes privés, foyer, invitations, paramètres, thèmes et Docker manuel.
+2. **Modules du foyer** : pièces et équipements, entretiens, courses, documents, tableau de bord, garanties, recherche et export. Regroupement demandé explicitement par le propriétaire ; voir [HOME-MODULES.md](HOME-MODULES.md).
 
-Chaque lot donne lieu à une PR vers main. Aucun lot dépendant ne démarre avant le retour du propriétaire.
+Les modifications sont proposées dans une branche dédiée et une PR vers `main`. Le propriétaire révise et fusionne ; aucun pipeline ou déploiement automatique.
 
-## Limites du premier lot
+## Évolutions possibles
 
-L’aperçu affiche les informations réelles du foyer. Les modules métier à venir sont des mentions de feuille de route, sans boutons factices. Le volume documents est provisionné ; aucun upload n’est encore disponible. Pas de seed requis.
+- Sélecteur de foyer, pagination et recherche SQL.
+- Modification/suppression des documents et aperçu PDF.
+- Notifications des échéances et garanties.
+- Calendrier graphique, import d’export et courses hors ligne.
 
-Le modèle supporte plusieurs foyers, mais l’interface sélectionne le premier foyer rejoint. Le sélecteur de foyer viendra ultérieurement. Les invitations créent des membres ; l’interface ne promeut pas encore un membre administrateur et ne supprime pas les administrateurs. Une invitation peut rejoindre un compte existant après connexion.
-
-Pas d’email transactionnel ni de récupération de mot de passe oubliée dans ce lot. La modification du mot de passe nécessite le mot de passe actuel. Ne pas confondre ce premier lot avec une version fonctionnellement complète de l’application.
+L’interface utilise exclusivement les données réelles de PostgreSQL. Aucun jeu de démonstration en production. Les limites actuelles et instructions de migration sont décrites dans HOME-MODULES.md et README.md.
