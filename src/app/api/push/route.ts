@@ -8,6 +8,7 @@ import {
   sendPush,
   subscriptionSchema,
 } from "@/lib/push";
+import { deviceLabel } from "@/lib/device-label";
 import { claimMailTest } from "@/lib/operations";
 export async function GET() {
   const context = await optionalContext();
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
     const body = await boundedJson(request);
     if (body.scope !== context.household.id)
       return new Response(null, { status: 409 });
-    if (!pushConfigured()) return new Response(null, { status: 503 });
+    if (body.operation !== "disable" && !pushConfigured()) return new Response(null, { status: 503 });
     if (body.operation === "test") {
       await claimMailTest(db, context.user.id);
       await sendPush(db, context.user.id, context.household.id);
@@ -46,6 +47,8 @@ export async function POST(request: Request) {
         context.user.id,
         context.household.id,
         body.subscription,
+        context.session.id,
+        deviceLabel(request.headers.get("user-agent")),
       );
     return Response.json({ ok: true });
   } catch {

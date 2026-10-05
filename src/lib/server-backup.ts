@@ -7,6 +7,8 @@ import {
 } from "node:crypto";
 import {
   mkdtemp,
+  copyFile,
+  chmod,
   mkdir,
   writeFile,
   readFile,
@@ -76,20 +78,17 @@ type Manifest = {
   files: { key: string; sha256: string; size: number }[];
 };
 const TABLES = [
-  "user",
-  "account",
-  "household",
-  "membership",
-  "document",
-  "equipment",
-  "maintenance",
-  "intervention",
-  "shopping_list",
-  "shopping_item",
+  "user", "session", "account", "verification", "rate_limit",
+  "household", "membership", "installation", "invitation", "room",
+  "document", "equipment", "maintenance", "intervention", "intervention_correction",
+  "shopping_list", "shopping_item", "password_reset", "reminder_preference",
+  "reminder_delivery", "offline_mutation", "worker_state", "push_subscription",
+  "push_receipt", "operations_alert",
 ];
-async function counts(client: pg.Client) {
+async function counts(client: pg.Client, tables = TABLES) {
+  if (tables.some((table) => !TABLES.includes(table))) throw Error("Table de sauvegarde inconnue");
   const output: Record<string, number> = {};
-  for (const table of TABLES)
+  for (const table of tables)
     output[table] = Number(
       (await client.query(`SELECT count(*) AS n FROM "${table}"`)).rows[0].n,
     );
@@ -135,7 +134,7 @@ async function verifyDirectory(directory: string, adminUrl: string) {
     const restored = new pg.Client({ connectionString: url.toString() });
     await restored.connect();
     try {
-      const actual = await counts(restored);
+      const actual = await counts(restored, Object.keys(manifest.counts));
       if (JSON.stringify(actual) !== JSON.stringify(manifest.counts))
         throw Error("Comptages restaurés différents");
       const files = (
@@ -216,9 +215,9 @@ export async function createServerBackup() {
     const config = Object.fromEntries(
       Object.entries(process.env).filter(
         ([name]) =>
-          /^(DATABASE_URL|POSTGRES_|BETTER_AUTH_|SETUP_KEY|SMTP_|OCR_ENABLED|DOCUMENTS_DIR|VAPID_|SERVER_BACKUPS_DIR|BACKUP_INTERVAL_HOURS|BACKUP_RETENTION)$/.test(
+          /^(DATABASE_URL|POSTGRES_|BETTER_AUTH_|SETUP_KEY|SMTP_|OCR_ENABLED|DOCUMENTS_DIR|VAPID_|SERVER_BACKUPS_DIR|BACKUP_INTERVAL_HOURS|BACKUP_RETENTION|BACKUP_REMOTE)$/.test(
             name,
-          ) || /^(POSTGRES_|BETTER_AUTH_|SMTP_|VAPID_)/.test(name),
+          ) || /^(POSTGRES_|BETTER_AUTH_|SMTP_|VAPID_|OCR_|OPERATIONS_|MONITOR_|RCLONE_)/.test(name),
       ),
     );
     delete config.BACKUP_ENCRYPTION_KEY;
@@ -227,6 +226,12 @@ export async function createServerBackup() {
       JSON.stringify(config),
       { mode: 0o600 },
     );
+    const extras: string[] = [];
+    if (process.env.BACKUP_REMOTE) {
+      await copyFile(process.env.RCLONE_CONFIG || "/config/rclone.conf", join(directory, "rclone.conf"));
+      await chmod(join(directory, "rclone.conf"), 0o600);
+      extras.push("rclone.conf");
+    }
     const tar = join(directory, "payload.tar.gz");
     await command("tar", [
       "-czf",
@@ -237,6 +242,7 @@ export async function createServerBackup() {
       "documents",
       "manifest.json",
       "configuration.json",
+      ...extras,
     ]);
     const nonce = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", key, nonce);
@@ -264,7 +270,7 @@ export async function createServerBackup() {
     return destination;
   } finally {
     if (connected) {
-      await client.query("ROLLBACK").catch(() => {});
+      await client.query("ROLLBACK").catch(() => { });
       await client.end();
     }
     await rm(directory, { recursive: true, force: true });
@@ -361,7 +367,7 @@ export async function unpackServerBackup(path: string, destination: string) {
       if (
         !/^[a-f0-9-]{36}$/.test(file.key) ||
         (await hashFile(join(destination, "documents", file.key))) !==
-          file.sha256
+        file.sha256
       )
         throw Error("Original invalide");
     }

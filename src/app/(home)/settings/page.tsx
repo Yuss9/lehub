@@ -1,4 +1,4 @@
-import { and, eq, isNull, gt, desc, asc } from "drizzle-orm";
+import { and, eq, isNull, gt, desc, asc, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   invitation,
@@ -8,7 +8,10 @@ import {
   household,
   workerState,
   reminderDelivery,
+  pushReceipt,
 } from "@/db/schema";
+import { AccountAccess, accountAccessData } from "@/components/account-access";
+import { workerHealth } from "@/lib/operations-health";
 import { PushControls } from "@/components/push-controls";
 import { operationsAction } from "@/app/operations-actions";
 import { getContext } from "@/lib/context";
@@ -40,6 +43,7 @@ export default async function SettingsPage() {
       ),
     );
   const isAdmin = context.membership.role === "admin";
+  const accessData = await accountAccessData(context.user.id);
   const members = await db
     .select({
       id: user.id,
@@ -52,17 +56,17 @@ export default async function SettingsPage() {
     .where(eq(membership.householdId, context.household.id));
   const invites = isAdmin
     ? await db
-        .select()
-        .from(invitation)
-        .where(
-          and(
-            eq(invitation.householdId, context.household.id),
-            isNull(invitation.acceptedAt),
-            isNull(invitation.revokedAt),
-            gt(invitation.expiresAt, new Date()),
-          ),
-        )
-        .orderBy(desc(invitation.createdAt))
+      .select()
+      .from(invitation)
+      .where(
+        and(
+          eq(invitation.householdId, context.household.id),
+          isNull(invitation.acceptedAt),
+          isNull(invitation.revokedAt),
+          gt(invitation.expiresAt, new Date()),
+        ),
+      )
+      .orderBy(desc(invitation.createdAt))
     : [];
   const homes = await db
     .select({ id: household.id, name: household.name })
@@ -73,21 +77,22 @@ export default async function SettingsPage() {
   const workers = isAdmin ? await db.select().from(workerState) : [];
   const deliveries = isAdmin
     ? await db
-        .select({
-          id: reminderDelivery.id,
-          kind: reminderDelivery.kind,
-          channel: reminderDelivery.channel,
-          status: reminderDelivery.status,
-          attempts: reminderDelivery.attempts,
-          dueOn: reminderDelivery.dueOn,
-          lastError: reminderDelivery.lastError,
-          updatedAt: reminderDelivery.updatedAt,
-        })
-        .from(reminderDelivery)
-        .where(eq(reminderDelivery.householdId, context.household.id))
-        .orderBy(desc(reminderDelivery.updatedAt))
-        .limit(30)
+      .select({
+        id: reminderDelivery.id,
+        kind: reminderDelivery.kind,
+        channel: reminderDelivery.channel,
+        status: reminderDelivery.status,
+        attempts: reminderDelivery.attempts,
+        dueOn: reminderDelivery.dueOn,
+        lastError: reminderDelivery.lastError,
+        updatedAt: reminderDelivery.updatedAt,
+      })
+      .from(reminderDelivery)
+      .where(eq(reminderDelivery.householdId, context.household.id))
+      .orderBy(desc(reminderDelivery.updatedAt))
+      .limit(30)
     : [];
+  const deviceResults = deliveries.length ? await db.select({ deliveryId: pushReceipt.deliveryId, status: pushReceipt.status, count: sql<number>`count(*)::int` }).from(pushReceipt).innerJoin(reminderDelivery, eq(reminderDelivery.id, pushReceipt.deliveryId)).where(and(eq(reminderDelivery.householdId, context.household.id), inArray(pushReceipt.deliveryId, deliveries.map((d) => d.id)))).groupBy(pushReceipt.deliveryId, pushReceipt.status) : [];
   return (
     <>
       <p className="eyebrow">COMME TU L’AIMES</p>
@@ -249,6 +254,7 @@ export default async function SettingsPage() {
               />
             </MutationForm>
           </section>
+          <AccountAccess data={accessData} currentSession={context.session.id} timezone={context.household.timezone} />
           <section className="panel">
             <h2 className="mb-4 text-lg font-semibold">Sur mon téléphone</h2>
             <InstallApp />
@@ -274,10 +280,7 @@ export default async function SettingsPage() {
                 <div key={w.id} className="rounded-xl border p-3 text-sm">
                   <p>
                     {w.id} ·{" "}
-                    {new Date().getTime() - w.heartbeatAt.getTime() <
-                    (w.id === "backup" ? 48 * 3600000 : 120000)
-                      ? "Actif"
-                      : "Sans signal récent"}
+                    {workerHealth(w) === "ok" ? "Actif" : workerHealth(w) === "error" ? "En échec" : "Sans cycle récent"}
                   </p>
                   <p className="mt-2 text-xs">
                     Dernier signal :{" "}
@@ -329,6 +332,7 @@ export default async function SettingsPage() {
                     }[d.status] || d.status}{" "}
                     · {d.attempts}/5 tentative(s)
                   </p>
+                  {d.channel === "push" && <p className="mt-2 text-xs text-muted-foreground">Appareils : {deviceResults.filter((r) => r.deliveryId === d.id).map((r) => `${r.count} ${{ sent: "envoyé(s)", failed: "en échec", expired: "expiré(s)" }[r.status] || r.status}`).join(" · ") || "En attente"}. Les appareils déjà servis ne sont pas relancés.</p>}
                   {d.lastError && (
                     <p className="mt-2 text-xs text-danger">{d.lastError}</p>
                   )}

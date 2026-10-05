@@ -1,5 +1,6 @@
 import {
   pgTable,
+  jsonb,
   text,
   timestamp,
   boolean,
@@ -387,6 +388,7 @@ export const offlineMutation = pgTable("offline_mutation", {
 });
 
 export const workerState = pgTable("worker_state", {
+  intervalSeconds: integer("interval_seconds").notNull().default(60),
   id: text().primaryKey(),
   heartbeatAt: timestamp("heartbeat_at", { withTimezone: true })
     .notNull()
@@ -397,6 +399,8 @@ export const workerState = pgTable("worker_state", {
 export const pushSubscription = pgTable(
   "push_subscription",
   {
+    sessionId: text("session_id").references(() => session.id, { onDelete: "cascade" }),
+    label: text().notNull().default("Navigateur"),
     id: text().primaryKey(),
     householdId: text("household_id")
       .notNull()
@@ -419,3 +423,29 @@ export const pushSubscription = pgTable(
     ),
   ],
 );
+
+// Retain receipts when a browser unsubscribes, so successful devices are not
+// notified again when another device is retried.
+export const pushReceipt = pgTable("push_receipt", {
+  deliveryId: text("delivery_id").notNull().references(() => reminderDelivery.id, { onDelete: "cascade" }),
+  deviceKey: text("device_key").notNull(),
+  status: text().notNull().default("pending"),
+  attempts: integer().notNull().default(0),
+  lastError: text("last_error").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.deliveryId, t.deviceKey] })]);
+export const interventionCorrection = pgTable("intervention_correction", {
+  id: text().primaryKey(),
+  householdId: text("household_id").notNull().references(() => household.id, { onDelete: "cascade" }),
+  interventionId: text("intervention_id").notNull().references(() => intervention.id, { onDelete: "cascade" }),
+  actorId: text("actor_id").references(() => user.id, { onDelete: "set null" }),
+  actorName: text("actor_name").notNull(),
+  correctedAt: timestamp("corrected_at", { withTimezone: true }).notNull().defaultNow(),
+  before: jsonb().$type<Record<string, unknown>>().notNull(),
+  after: jsonb().$type<Record<string, unknown>>().notNull(),
+}, (t) => [index("correction_household_intervention_idx").on(t.householdId, t.interventionId)]);
+export const operationsAlert = pgTable("operations_alert", {
+  id: text().primaryKey(),
+  state: text().notNull(),
+  notifiedAt: timestamp("notified_at", { withTimezone: true }).notNull().defaultNow(),
+});

@@ -19,7 +19,8 @@
     "account:recover": "node --env-file-if-exists=.env --import tsx scripts/recover-account.ts",
     "test:postgres": "node --import tsx scripts/test-postgres.ts",
     "backup:server": "node --env-file-if-exists=.env --import tsx scripts/server-backup.ts",
-    "push:keys": "node --import tsx scripts/generate-vapid.ts"
+    "push:keys": "node --import tsx scripts/generate-vapid.ts",
+    "monitor": "node --env-file-if-exists=.env --import tsx scripts/monitor.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "1.3.3",

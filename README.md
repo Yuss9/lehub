@@ -74,7 +74,7 @@ Après validation et fusion manuelle de la PR :
 
 En cas d’échec de migration, laisser l’app arrêtée et examiner l’erreur. Ne pas rétrograder le code sur un schéma incompatible ; restaurer ensemble la base et les fichiers si nécessaire.
 
-Les sauvegardes serveur régulières, diagnostics, notifications push et tests natifs sont décrits dans [OPERATIONS.md](docs/OPERATIONS.md).
+Les sauvegardes serveur régulières, diagnostics, notifications push et tests natifs sont décrits dans [OPERATIONS.md](docs/OPERATIONS.md). Pour la mise à jour des appareils, la copie hors serveur et les alertes, voir [RELIABILITY.md](docs/RELIABILITY.md).
 
 ## Comptes et foyer
 

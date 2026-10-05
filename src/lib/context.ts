@@ -19,7 +19,7 @@ export async function optionalContext() {
   const context =
     contexts.find((c) => c.household.id === selected) || contexts[0];
   if (!context) return null;
-  return { ...context, user: session.user };
+  return { ...context, user: session.user, session: session.session };
 }
 
 export async function getContext() {

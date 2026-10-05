@@ -4,6 +4,8 @@ import { z } from "zod";
 import type { db as productionDb } from "@/db";
 import {
   intervention,
+  interventionCorrection,
+  user,
   reminderDelivery,
   workerState,
   rateLimit,
@@ -35,26 +37,16 @@ export async function correctIntervention(
     throw new DomainError(
       "Une intervention doit être passée ou datée d’aujourd’hui.",
     );
-  const rows = await database
-    .update(intervention)
-    .set({
-      completedOn: data.completedOn,
-      scheduledOn: data.scheduledOn,
-      notes: data.notes,
-      costCents: data.cost,
-      outcome: data.outcome,
-      revision: sql`${intervention.revision} + 1`,
-    })
-    .where(
-      and(
-        eq(intervention.id, id),
-        eq(intervention.householdId, home),
-        eq(intervention.revision, data.revision),
-      ),
-    )
-    .returning();
-  if (!rows.length)
-    throw new DomainError("L’intervention a changé. Actualise la page.");
+  await database.transaction(async (tx) => {
+    // The snapshot and update share a row lock and transaction: a rejected
+    // stale correction cannot append an audit entry.
+    const [before] = await tx.select().from(intervention).where(and(eq(intervention.id, id), eq(intervention.householdId, home), eq(intervention.revision, data.revision))).for("update");
+    if (!before) throw new DomainError("L’intervention a changé. Actualise la page.");
+    const [author] = await tx.select({ name: user.name }).from(user).where(eq(user.id, actor));
+    const [after] = await tx.update(intervention).set({ completedOn: data.completedOn, scheduledOn: data.scheduledOn, notes: data.notes, costCents: data.cost, outcome: data.outcome, revision: sql`${intervention.revision} + 1` }).where(eq(intervention.id, id)).returning();
+    const snapshot = (entry: typeof intervention.$inferSelect) => ({ revision: entry.revision, completedOn: entry.completedOn, scheduledOn: entry.scheduledOn, notes: entry.notes, costCents: entry.costCents, outcome: entry.outcome });
+    await tx.insert(interventionCorrection).values({ id: randomUUID(), householdId: home, interventionId: id, actorId: actor, actorName: author.name, before: snapshot(before), after: snapshot(after) });
+  });
 }
 export async function retryReminder(
   database: Database,
@@ -105,7 +97,7 @@ export async function claimMailTest(database: Database, actor: string) {
 export async function workerHeartbeat(
   database: Database,
   id: string,
-  update: { completedAt?: Date; lastError?: string } = {},
+  update: { completedAt?: Date; lastError?: string; intervalSeconds?: number } = {},
 ) {
   await database
     .insert(workerState)

@@ -10,6 +10,7 @@ import {
   equipment,
   maintenance,
   intervention,
+  interventionCorrection,
   shoppingList,
   shoppingItem,
   document,
@@ -88,6 +89,7 @@ const rows = {
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
   }),
 };
+const correctionSnapshot = z.object({ revision, completedOn: dateSchema, scheduledOn: dateSchema, notes: z.string().max(4000), costCents: cents, outcome: z.enum(["completed", "skipped", "cancelled"]) });
 const manifestSchema = z.object({
   version: z.literal(2),
   exportedAt: z.string().datetime(),
@@ -110,6 +112,7 @@ const manifestSchema = z.object({
   equipments: z.array(rows.equipments).max(50000),
   tasks: z.array(rows.tasks).max(50000),
   history: z.array(rows.history).max(50000),
+  corrections: z.array(z.object({ id, interventionId: id, actorName: z.string().max(254), correctedAt: z.string().datetime(), before: correctionSnapshot, after: correctionSnapshot })).max(50000).default([]),
   lists: z.array(rows.lists).max(50000),
   items: z.array(rows.items).max(50000),
   documents: z.array(rows.documents).max(1999),
@@ -147,7 +150,7 @@ export async function exportBackup(
           sha256: createHash("sha256").update(bytes).digest("hex"),
         });
       }
-      const [rooms, equipments, tasks, history, lists, items] =
+      const [rooms, equipments, tasks, history, lists, items, corrections] =
         await Promise.all([
           tx.select().from(room).where(eq(room.householdId, householdId)),
           tx
@@ -170,17 +173,18 @@ export async function exportBackup(
             .select()
             .from(shoppingItem)
             .where(eq(shoppingItem.householdId, householdId)),
+          tx.select().from(interventionCorrection).where(eq(interventionCorrection.householdId, householdId)),
         ]);
       const authorIds = history
         .map((h) => h.completedBy)
         .filter((id): id is string => !!id);
       const authors = authorIds.length
         ? await import("@/db/schema").then(async ({ user }) =>
-            tx
-              .select({ id: user.id, name: user.name })
-              .from(user)
-              .where(inArray(user.id, authorIds)),
-          )
+          tx
+            .select({ id: user.id, name: user.name })
+            .from(user)
+            .where(inArray(user.id, authorIds)),
+        )
         : [];
       const data = manifestSchema.parse(
         JSON.parse(
@@ -198,6 +202,7 @@ export async function exportBackup(
             lists,
             items,
             documents: docs,
+            corrections,
           }),
         ),
       );
@@ -269,6 +274,7 @@ export function inspectBackup(bytes: Buffer) {
     "equipments",
     "tasks",
     "history",
+    "corrections",
     "lists",
     "items",
     "documents",
@@ -285,6 +291,7 @@ export function inspectBackup(bytes: Buffer) {
   for (const row of data.equipments) ref("rooms", row.roomId);
   for (const row of data.tasks) ref("equipments", row.equipmentId);
   for (const row of data.history) ref("tasks", row.maintenanceId);
+  for (const row of data.corrections) ref("history", row.interventionId);
   for (const row of data.items) {
     ref("lists", row.listId);
     ref("equipments", row.equipmentId);
@@ -433,12 +440,14 @@ export async function importBackup(
               completedBy: null,
               notes: r.author
                 ? `${r.notes}\nAuteur avant restauration : ${r.author}`
-                    .trim()
-                    .slice(0, 4000)
+                  .trim()
+                  .slice(0, 4000)
                 : r.notes,
             })),
             (chunk) => tx.insert(intervention).values(chunk),
           );
+        if (data.corrections.length)
+          await chunks(data.corrections.map((r) => ({ ...r, id: map("corrections", r.id)!, interventionId: map("history", r.interventionId)!, householdId, actorId: null, correctedAt: new Date(r.correctedAt) })), (chunk) => tx.insert(interventionCorrection).values(chunk));
         if (data.lists.length)
           await chunks(
             data.lists.map((r) => ({
@@ -470,11 +479,11 @@ export async function importBackup(
       { isolationLevel: "serializable" },
     );
   } catch (error) {
-    await Promise.all(keys.map((key) => unlink(filePath(key)).catch(() => {})));
+    await Promise.all(keys.map((key) => unlink(filePath(key)).catch(() => { })));
     throw error;
   }
   await Promise.all(
-    oldKeys.map((key) => unlink(filePath(key)).catch(() => {})),
+    oldKeys.map((key) => unlink(filePath(key)).catch(() => { })),
   );
   return {
     rooms: data.rooms.length,
