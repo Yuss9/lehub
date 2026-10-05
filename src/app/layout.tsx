@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Providers } from "@/components/providers";
 import "./globals.css";
+import { Pwa } from "@/components/pwa";
 export const metadata: Metadata = {
   title: { default: "lehub — La maison, simplement", template: "%s · lehub" },
   description: "Ton espace privé pour organiser la maison.",
@@ -14,7 +15,10 @@ export default function RootLayout({
   return (
     <html lang="fr" suppressHydrationWarning>
       <body>
-        <Providers>{children}</Providers>
+        <Providers>
+          <Pwa />
+          {children}
+        </Providers>
       </body>
     </html>
   );

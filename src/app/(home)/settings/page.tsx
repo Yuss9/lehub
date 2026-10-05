@@ -1,9 +1,13 @@
 import { and, eq, isNull, gt, desc } from "drizzle-orm";
 import { db } from "@/db";
-import { invitation, membership, user } from "@/db/schema";
+import { invitation, membership, user, reminderPreference } from "@/db/schema";
 import { getContext } from "@/lib/context";
 import { Field, MutationForm } from "@/components/form";
 import { PasswordForm } from "@/components/account-controls";
+import { BackupControls } from "@/components/backup-controls";
+import { InstallApp } from "@/components/pwa";
+import { reminderAction } from "@/app/home-actions";
+import { mailConfigured } from "@/lib/mail";
 import { ThemeControl } from "@/components/providers";
 import {
   householdAction,
@@ -13,6 +17,15 @@ import {
 } from "@/app/actions";
 export default async function SettingsPage() {
   const context = await getContext();
+  const [preference] = await db
+    .select()
+    .from(reminderPreference)
+    .where(
+      and(
+        eq(reminderPreference.householdId, context.household.id),
+        eq(reminderPreference.userId, context.user.id),
+      ),
+    );
   const isAdmin = context.membership.role === "admin";
   const members = await db
     .select({
@@ -105,6 +118,46 @@ export default async function SettingsPage() {
               Ton choix est conservé sur cet appareil.
             </p>
             <ThemeControl />
+          </section>
+          <section className="panel">
+            <h2 className="mb-4 text-lg font-semibold">Mes rappels</h2>
+            <p className="mb-5 text-xs text-muted-foreground">
+              Entretiens et fins de garantie, une fois par échéance.{" "}
+              {mailConfigured()
+                ? "Envoyés à ton adresse email."
+                : "L’administrateur doit configurer l’envoi d’emails pour activer la distribution."}
+            </p>
+            <MutationForm
+              action={reminderAction}
+              label="Enregistrer les rappels"
+            >
+              <label className="flex items-center gap-3 text-sm">
+                <input
+                  name="emailEnabled"
+                  type="checkbox"
+                  defaultChecked={preference?.emailEnabled || false}
+                />
+                Recevoir mes rappels par email
+              </label>
+              <Field
+                label="Jours avant l’échéance"
+                name="leadDays"
+                type="number"
+                min={0}
+                max={90}
+                defaultValue={preference?.leadDays ?? 7}
+              />
+            </MutationForm>
+          </section>
+          <section className="panel">
+            <h2 className="mb-4 text-lg font-semibold">Sur mon téléphone</h2>
+            <InstallApp />
+          </section>
+          <section className="panel">
+            <h2 className="mb-4 text-lg font-semibold">
+              Sauvegarde et restauration
+            </h2>
+            <BackupControls admin={isAdmin} />
           </section>
           <section className="panel">
             <h2 className="mb-2 text-lg font-semibold">Sécurité</h2>

@@ -8,27 +8,16 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 import { getContext } from "@/lib/context";
-import { homeData } from "@/lib/home-data";
+import { dashboardData } from "@/lib/home-data";
 import { today } from "@/lib/recurrence";
 import { SearchForm, Empty, Jump, dateLabel } from "@/components/home-ui";
 import { Button } from "@/components/ui/button";
 export default async function HomePage() {
   const { household, user } = await getContext();
-  const data = await homeData(household.id);
+  const data = await dashboardData(household.id, household.timezone);
   const current = today(household.timezone);
-  const horizon = new Date(`${current}T00:00:00Z`);
-  horizon.setUTCDate(horizon.getUTCDate() + 90);
-  const until = horizon.toISOString().slice(0, 10);
-  const tasks = data.tasks.filter((t) => !t.archived);
-  const warranties = data.equipments
-    .filter(
-      (e) =>
-        !e.archived &&
-        e.warrantyUntil &&
-        e.warrantyUntil >= current &&
-        e.warrantyUntil <= until,
-    )
-    .sort((a, b) => a.warrantyUntil!.localeCompare(b.warrantyUntil!));
+  const tasks = data.upcoming;
+  const warranties = data.warranties;
   return (
     <>
       <header className="mb-8 flex items-start justify-between gap-4">
@@ -56,15 +45,13 @@ export default async function HomePage() {
             {user.name.split(" ")[0]}.
           </h2>
           <p className="mt-4 text-sm leading-7 text-muted-foreground">
-            {tasks.filter((t) => t.dueOn <= current).length
-              ? `${tasks.filter((t) => t.dueOn <= current).length} entretien(s) à réaliser aujourd’hui ou en retard.`
+            {data.overdue
+              ? `${data.overdue} entretien(s) à réaliser aujourd’hui ou en retard.`
               : "Tout est en ordre. Un peu d’attention aujourd’hui, une maison qui dure."}
           </p>
           <Button asChild variant="outline" className="mt-7">
-            <Link href={data.rooms.length ? "/maintenance" : "/rooms"}>
-              {data.rooms.length
-                ? "Voir les entretiens"
-                : "Organiser ma maison"}
+            <Link href={data.rooms ? "/maintenance" : "/rooms"}>
+              {data.rooms ? "Voir les entretiens" : "Organiser ma maison"}
               <ArrowUpRight />
             </Link>
           </Button>
@@ -80,25 +67,25 @@ export default async function HomePage() {
           {
             Icon: DoorOpen,
             label: "Pièces",
-            value: data.rooms.filter((r) => !r.archived).length,
+            value: data.rooms,
             href: "/rooms",
           },
           {
             Icon: Wrench,
             label: "Entretiens à venir",
-            value: tasks.length,
+            value: data.tasks,
             href: "/maintenance",
           },
           {
             Icon: ShoppingBasket,
             label: "Articles à acheter",
-            value: data.items.filter((i) => !i.checked).length,
+            value: data.items,
             href: "/shopping",
           },
           {
             Icon: Files,
             label: "Documents privés",
-            value: data.documents.length,
+            value: data.documents,
             href: "/documents",
           },
         ].map(({ Icon, label, value, href }) => (
@@ -172,10 +159,9 @@ export default async function HomePage() {
       </div>
       <footer className="mt-10 flex flex-wrap items-center justify-between gap-4 border-t pt-6">
         <span className="text-xs text-muted-foreground">
-          {data.equipments.filter((e) => !e.archived).length} équipements ·{" "}
-          {household.name}
+          {data.equipments} équipements · {household.name}
         </span>
-        <Jump href="/api/export">Exporter les données du foyer</Jump>
+        <Jump href="/api/export">Télécharger la sauvegarde ZIP</Jump>
       </footer>
     </>
   );

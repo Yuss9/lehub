@@ -5,99 +5,83 @@ import { PageHeader, SearchForm, Empty } from "@/components/home-ui";
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; page?: string }>;
 }) {
   const { household } = await getContext();
-  const data = await homeData(household.id);
-  const { q = "" } = await searchParams;
+  const { q = "", page = "1" } = await searchParams;
+  const pageIndex = Math.max(1, Math.min(10000, Number(page) || 1));
+  const data = await homeData(household.id, {
+    query: q,
+    page: pageIndex,
+    modules: q.trim() ? undefined : [],
+  });
   const query = q.trim().slice(0, 120).toLocaleLowerCase("fr");
-  const match = (...values: (string | null)[]) =>
-    query && values.join(" ").toLocaleLowerCase("fr").includes(query);
   const groups = [
     {
       title: "Pièces",
-      results: data.rooms
-        .filter((r) => match(r.name, r.description))
-        .map((r) => ({
-          id: r.id,
-          title: r.name,
-          detail: r.archived ? "Archivée" : "Pièce",
-          href: `/rooms#${r.id}`,
-        })),
+      results: data.rooms.map((r) => ({
+        id: r.id,
+        title: r.name,
+        detail: r.archived ? "Archivée" : "Pièce",
+        href: `/rooms?q=${encodeURIComponent(r.name)}#${r.id}`,
+      })),
     },
     {
       title: "Équipements",
-      results: data.equipments
-        .filter((e) => match(e.name, e.brand, e.model, e.serial, e.notes))
-        .map((e) => ({
-          id: e.id,
-          title: e.name,
-          detail: [e.brand, e.model].join(" "),
-          href: `/equipment?archived=1#${e.id}`,
-        })),
+      results: data.equipments.map((e) => ({
+        id: e.id,
+        title: e.name,
+        detail: [e.brand, e.model].join(" "),
+        href: `/equipment/${e.id}`,
+      })),
     },
     {
       title: "Entretiens",
-      results: data.tasks
-        .filter((t) => match(t.title, t.notes))
-        .map((t) => ({
-          id: t.id,
-          title: t.title,
-          detail: t.dueOn,
-          href: `/maintenance?archived=1#${t.id}`,
-        })),
+      results: data.tasks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        detail: t.dueOn,
+        href: `/maintenance?task=${t.id}`,
+      })),
     },
     {
       title: "Courses",
-      results: data.items
-        .filter((i) => match(i.name))
-        .map((i) => ({
-          id: i.id,
-          title: i.name,
-          detail: data.lists.find((l) => l.id === i.listId)?.name || "",
-          href: `/shopping?list=${i.listId}`,
-        })),
+      results: data.items.map((i) => ({
+        id: i.id,
+        title: i.name,
+        detail: data.lists.find((l) => l.id === i.listId)?.name || "",
+        href: `/shopping?list=${i.listId}`,
+      })),
     },
     {
       title: "Documents",
-      results: data.documents
-        .filter((d) => match(d.title, d.originalName))
-        .map((d) => ({
-          id: d.id,
-          title: d.title,
-          detail: d.originalName,
-          href: `/documents#${d.id}`,
-        })),
+      results: data.documents.map((d) => ({
+        id: d.id,
+        title: d.title,
+        detail: d.originalName,
+        href: `/documents?q=${encodeURIComponent(d.title)}#${d.id}`,
+      })),
     },
   ];
   groups.push({
     title: "Listes de courses",
-    results: data.lists
-      .filter((l) => match(l.name))
-      .map((l) => ({
-        id: l.id,
-        title: l.name,
-        detail: "Liste partagée",
-        href: `/shopping?list=${l.id}`,
-      })),
+    results: data.lists.map((l) => ({
+      id: l.id,
+      title: l.name,
+      detail: "Liste partagée",
+      href: `/shopping?list=${l.id}`,
+    })),
   });
   groups.push({
     title: "Interventions",
-    results: data.history
-      .filter((h) =>
-        match(
-          h.notes,
-          data.tasks.find((t) => t.id === h.maintenanceId)?.title || "",
-        ),
-      )
-      .map((h) => ({
-        id: h.id,
-        title:
-          data.tasks.find((t) => t.id === h.maintenanceId)?.title ||
-          "Intervention",
-        detail: `${h.completedOn} · ${h.notes}`,
-        href: "/maintenance",
-      })),
+    results: data.history.map((h) => ({
+      id: h.id,
+      title:
+        data.tasks.find((t) => t.id === h.maintenanceId)?.title ||
+        "Intervention",
+      detail: `${h.completedOn} · ${h.notes}`,
+      href: "/maintenance?view=history",
+    })),
   });
   const total = groups.reduce((n, g) => n + g.results.length, 0);
   return (
@@ -112,9 +96,26 @@ export default async function SearchPage({
       ) : (
         <>
           <p className="mb-6 text-sm text-muted-foreground">
-            {total} résultat(s) pour « {q.slice(0, 120)} »
+            Page {pageIndex} · jusqu’à 20 résultats par rubrique pour «{" "}
+            {q.slice(0, 120)} »
           </p>
           {!total && <Empty text="Aucun résultat. Essaie un autre mot-clé." />}
+          <div className="mb-6 flex gap-4 text-sm text-primary">
+            {pageIndex > 1 && (
+              <Link
+                href={`/search?q=${encodeURIComponent(q)}&page=${pageIndex - 1}`}
+              >
+                Précédent
+              </Link>
+            )}
+            {groups.some((g) => g.results.length === 20) && (
+              <Link
+                href={`/search?q=${encodeURIComponent(q)}&page=${pageIndex + 1}`}
+              >
+                Suivant
+              </Link>
+            )}
+          </div>
           {groups
             .filter((g) => g.results.length)
             .map((g) => (

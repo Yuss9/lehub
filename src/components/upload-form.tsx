@@ -17,6 +17,12 @@ export function UploadForm({
     >
       <input type="hidden" name="operation" value="upload" />
       <div className="grid gap-5 sm:grid-cols-2">
+        <Field
+          label="Tags"
+          name="tags"
+          maxLength={500}
+          hint="Séparés par des virgules."
+        />
         <Field label="Titre" name="title" required maxLength={120} />
         <Select
           label="Équipement associé"

@@ -1,4 +1,5 @@
 import type { equipment, room } from "@/db/schema";
+import { moneyInput } from "@/lib/value-schemas";
 import { Field } from "./form";
 import { EntityForm, Select } from "./home-ui";
 export function EquipmentForm({
@@ -12,6 +13,7 @@ export function EquipmentForm({
     <EntityForm
       entity="equipment"
       id={value?.id}
+      revision={value?.revision}
       label={value ? "Enregistrer" : "Ajouter l’équipement"}
     >
       <div className="grid gap-5 sm:grid-cols-2">
@@ -57,6 +59,25 @@ export function EquipmentForm({
           name="warrantyUntil"
           type="date"
           defaultValue={value?.warrantyUntil || ""}
+        />
+        <Field
+          label="Prix d’achat"
+          name="purchasedCents"
+          inputMode="decimal"
+          defaultValue={moneyInput(value?.purchasedCents)}
+        />
+        <Field
+          label="Vendeur"
+          name="seller"
+          maxLength={120}
+          defaultValue={value?.seller || ""}
+        />
+        <Field
+          label="Tags"
+          name="tags"
+          maxLength={500}
+          defaultValue={value?.tags || ""}
+          hint="Séparés par des virgules."
         />
         <Field
           label="Notes"

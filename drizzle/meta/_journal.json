@@ -22,6 +22,20 @@
       "when": 1791200844125,
       "tag": "0002_lovely_amphibian",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791204367817,
+      "tag": "0003_overconfident_human_torch",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791205826159,
+      "tag": "0004_numerous_nightcrawler",
+      "breakpoints": true
     }
   ]
 }

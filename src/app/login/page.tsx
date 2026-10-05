@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { installation } from "@/db/schema";
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ created?: string; reason?: string }>;
+  searchParams: Promise<{ created?: string; reason?: string; reset?: string }>;
 }) {
   if (!(await db.select().from(installation).limit(1)).length)
     redirect("/setup");
@@ -32,7 +33,18 @@ export default async function LoginPage({
           <SignOut />
         </div>
       )}
+      {params.reset && (
+        <p className="mb-5 text-sm text-primary">
+          Mot de passe modifié. Reconnecte-toi.
+        </p>
+      )}
       <LoginForm />
+      <Link
+        href="/forgot-password"
+        className="mt-4 block min-h-11 py-3 text-center text-sm text-primary"
+      >
+        Mot de passe oublié ?
+      </Link>
       <p className="mt-7 text-center text-xs leading-relaxed text-muted-foreground">
         Pour rejoindre un foyer, demande un lien d’invitation à son
         administrateur.

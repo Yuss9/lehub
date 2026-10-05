@@ -36,3 +36,56 @@ export function nextDue(
   } else throw new Error("Récurrence invalide.");
   return date.toISOString().slice(0, 10);
 }
+
+/** Project only one month, jumping directly over years of old occurrences. */
+export function occurrencesInMonth(
+  task: {
+    dueOn: string;
+    frequency: string;
+    interval: number;
+    anchorDay: number;
+  },
+  month: string,
+) {
+  const start = `${month}-01`;
+  if (!dateSchema.safeParse(start).success) return [];
+  const first = new Date(`${start}T00:00:00Z`);
+  const last = new Date(first);
+  last.setUTCMonth(last.getUTCMonth() + 1);
+  last.setUTCDate(0);
+  const end = last.toISOString().slice(0, 10);
+  let date = task.dueOn;
+  if (date < start && task.frequency !== "once") {
+    const base = new Date(`${date}T00:00:00Z`);
+    let jumps = 0;
+    if (task.frequency === "weekly")
+      jumps = Math.floor(
+        (first.getTime() - base.getTime()) / (7 * task.interval * 86400000),
+      );
+    else
+      jumps = Math.floor(
+        ((first.getUTCFullYear() - base.getUTCFullYear()) * 12 +
+          first.getUTCMonth() -
+          base.getUTCMonth()) /
+          (task.interval * (task.frequency === "yearly" ? 12 : 1)),
+      );
+    if (jumps > 0)
+      date = nextDue(
+        date,
+        task.frequency,
+        task.interval * jumps,
+        task.anchorDay,
+      );
+  }
+  const dates: string[] = [];
+  while (date <= end) {
+    if (date >= start) dates.push(date);
+    if (task.frequency === "once") break;
+    try {
+      date = nextDue(date, task.frequency, task.interval, task.anchorDay);
+    } catch {
+      break;
+    }
+  }
+  return dates;
+}

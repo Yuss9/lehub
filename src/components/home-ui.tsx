@@ -87,7 +87,9 @@ export function EntityForm({
   id = "",
   label = "Enregistrer",
   children,
+  revision = 0,
 }: {
+  revision?: number;
   entity: string;
   id?: string;
   label?: string;
@@ -97,6 +99,7 @@ export function EntityForm({
     <MutationForm action={homeAction} label={label}>
       <input type="hidden" name="entity" value={entity} />
       <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="revision" value={revision} />
       {children}
     </MutationForm>
   );
@@ -107,7 +110,9 @@ export function Action({
   operation,
   label,
   children,
+  revision = 0,
 }: {
+  revision?: number;
   entity: string;
   id: string;
   operation: string;
@@ -125,6 +130,7 @@ export function Action({
     >
       <input type="hidden" name="entity" value={entity} />
       <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="revision" value={revision} />
       <input type="hidden" name="operation" value={operation} />
       {children}
     </MutationForm>
@@ -187,4 +193,48 @@ export function dateLabel(value: string | null) {
         timeZone: "UTC",
       }).format(new Date(`${value}T00:00:00Z`))
     : "Non renseignée";
+}
+
+export function Pagination({
+  page,
+  pages,
+  path,
+  params = {},
+}: {
+  page: number;
+  pages: number;
+  path: string;
+  params?: Record<string, string | undefined>;
+}) {
+  if (pages <= 1) return null;
+  const url = (p: number) => {
+    const q = new URLSearchParams();
+    for (const [key, v] of Object.entries(params)) if (v) q.set(key, v);
+    q.set("page", String(p));
+    return `${path}?${q}`;
+  };
+  return (
+    <nav
+      aria-label="Pagination"
+      className="my-6 flex items-center justify-between gap-4 text-sm"
+    >
+      {page > 1 ? (
+        <Link className="min-h-11 py-3 text-primary" href={url(page - 1)}>
+          ← Précédent
+        </Link>
+      ) : (
+        <span />
+      )}
+      <span>
+        Page {page} sur {pages}
+      </span>
+      {page < pages ? (
+        <Link className="min-h-11 py-3 text-primary" href={url(page + 1)}>
+          Suivant →
+        </Link>
+      ) : (
+        <span />
+      )}
+    </nav>
+  );
 }

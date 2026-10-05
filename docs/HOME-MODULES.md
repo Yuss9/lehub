@@ -1,55 +1,83 @@
 # Modules du foyer
 
-Les cinq modules sont regroupés dans une PR à la demande du propriétaire. Les fondations existantes, la navigation sobre, le thème clair/sombre et les polices système sont conservés.
-
 ## Utilisation
 
-- **Pièces** : créer, modifier, archiver/restaurer, définir l’ordre numérique d’affichage, consulter les appareils d’une pièce.
-- **Équipements** : nom, pièce, marque, modèle, numéro de série, notes, achat et garantie. Recherche, filtre par pièce, archives, photos privées et documents associés.
-- **Entretien** : date civile dans le fuseau du foyer, fréquence unique/hebdomadaire/mensuelle/annuelle et intervalle. Récurrence depuis la date prévue ou la réalisation. Vue par mois et regroupement des échéances par jour. Compte rendu et historique conservés.
-- **Courses** : plusieurs listes partagées avec les membres, quantité libre, association aux appareils/entretiens, boutons tactiles pour cocher/décocher, renommage et suppression. Actualisation toutes les 10 secondes quand l’onglet est visible, sauf pendant la saisie.
-- **Documents** : dépôt de PDF/JPEG/PNG/WebP, maximum 10 Mo par fichier, titre, catégorie, appareil associé, recherche, filtre et téléchargement privé. Les photos apparaissent sur la fiche de l’équipement.
-- **Aperçu** : compteurs réels, prochaines tâches, retards, garanties expirant dans les 90 prochains jours, export JSON.
-- **Recherche** : pièces, détails des appareils, entretiens, articles et documents. La recherche couvre les métadonnées, sans OCR ni recherche dans le contenu des fichiers.
+- **Pièces et équipements** : formulaires avec contrôle de version, archivage, filtres et pagination. Chaque équipement possède une fiche réunissant ses photos, documents, entretiens et interventions. Le prix d’achat est conservé en centimes ; vendeur et tags sont recherchables.
+- **Entretien** : récurrences fixes ou depuis réalisation, calendrier mensuel avec dates prévisionnelles, report d’une échéance, occurrence ignorée, réalisation datée et coût. Ajouter une intervention passée conserve le planning courant. L’historique montre l’auteur, le titre au moment de l’intervention et le coût.
+- **Courses** : plusieurs listes partagées, état coché explicite, modification du nom/quantité/catégorie, regroupement, associations aux équipements/entretiens, retrait des achats et restauration des suppressions. Les listes peuvent être renommées ou rétablies depuis le panneau de gestion.
+- **Documents** : PDF/JPEG/PNG/WebP privés, 10 Mo maximum par fichier ; modification du titre, des tags, de la catégorie et de l’association, remplacement de l’original, suppression et restauration. La corbeille interdit immédiatement le téléchargement. Le worker supprime définitivement les documents après 30 jours.
+- **Recherche et aperçu** : requêtes SQL limitées aux modules utiles, compteurs réels, garanties, pagination de 20 résultats et recherche dans les tags et le texte extrait des documents. Le calendrier projette les récurrences ; les dates futures restent indicatives.
+- **Mobile** : navigation inférieure avec menu « Plus », installation sur l’écran d’accueil et courses hors ligne après activation volontaire sur l’appareil. Les animations respectent la préférence de réduction des mouvements.
 
-Les animations d’entrée, de cartes et de formulaires restent légères et respectent `prefers-reduced-motion`.
+## Concurrence et mode hors ligne
 
-## Migrations et configuration
+Les modifications des pièces, équipements, documents, listes, articles et entretiens comparent la révision du formulaire à celle de la base. Un ancien formulaire reçoit un message demandant d’actualiser, sans écraser la nouvelle version. La réalisation d’un entretien verrouille la tâche et compare aussi l’échéance attendue. Modifier les consignes d’un entretien arrivé au 28 février conserve son ancrage au 31 si la date n’a pas été changée.
 
-Faire une sauvegarde cohérente de la base et du volume documents avant la mise à jour. Après fusion manuelle :
+Cocher un achat enregistre `checked=true` ; deux membres cochant une ancienne vue ne décochent donc plus l’article. Une action volontaire contraire reste autorisée : le dernier état demandé prévaut. Les identifiants de mutation rendent les reprises de synchronisation idempotentes.
+
+La conservation hors ligne est désactivée par défaut. Elle stocke uniquement les listes, articles, associations et changements en attente du compte actif dans la mémoire locale du navigateur. Au retour de la connexion, le serveur relit la session, le foyer et les associations avant chaque écriture. Les conflits de modification demandent d’annuler les changements en attente et de reprendre la saisie depuis la version du serveur. La déconnexion ou une réponse d’accès refusé efface le cache. Un changement de compte ne rejoue jamais l’ancienne file.
+
+Le service worker ne conserve ni pages privées, ni API, ni documents. Il met en cache uniquement la page publique `/offline`, son code et les ressources publiques. Une navigation sans réseau ouvre cette page. Les données volontairement conservées restent lisibles sur l’appareil hors ligne : désactiver la conservation sur un appareil partagé. Les droits révoqués sont détectés au prochain contact avec le serveur. La création et la gestion des listes demandent une connexion ; les articles fonctionnent hors ligne.
+
+## Rappels, OCR et récupération d’accès
+
+Configurer `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` et, si nécessaire, `SMTP_USER`/`SMTP_PASSWORD`. Le port 465 utilise TLS direct ; les autres ports exigent STARTTLS, sauf `SMTP_ALLOW_PLAINTEXT=true` pour un relais local explicitement choisi. Les secrets restent dans `.env`.
+
+Chaque membre choisit ses rappels dans Paramètres : activation volontaire et délai de 0 à 90 jours. Le worker vérifie les échéances toutes les minutes, déduplique par destinataire/objet/date et effectue jusqu’à cinq tentatives SMTP. Les accès retirés, les rappels désactivés et les anciennes échéances sont contrôlés avant envoi. Comme tout envoi SMTP, un crash après acceptation de l’email et avant validation en base peut produire un doublon. Ce lot fournit les rappels par email ; aucune permission de notification push n’est demandée.
+
+Le lien « Mot de passe oublié » donne toujours une réponse générique. Les demandes sont limitées par IP et email. Seule l’empreinte du jeton aléatoire est stockée, avec une expiration de 30 minutes. La réinitialisation est à usage unique et révoque les sessions. Sans SMTP, un opérateur possédant l’accès au serveur peut créer un lien avec :
+
+```bash
+docker compose run --rm --no-deps worker npm run account:recover -- administrateur@example.com
+# Ou en local, avec DATABASE_URL et BETTER_AUTH_URL configurés :
+npm run account:recover -- administrateur@example.com
+```
+
+Ne pas communiquer ce lien dans des journaux publics. La clé de configuration initiale ne sert pas de clé de récupération.
+
+Le worker extrait les PDF textuels via Poppler et reconnaît les images/scans avec Tesseract français/anglais. Maximum dix pages PDF, 30 secondes par commande et 200 000 caractères. Les résultats dépendent de la qualité des scans. Une erreur est visible sur le document et peut être relancée. `OCR_ENABLED=false` désactive cette extraction. Le conteneur worker embarque Poppler et Tesseract ; en local, installer ces programmes et leurs langues.
+
+```bash
+npm run worker
+npm run worker -- --once
+```
+
+## Sauvegarde et restauration
+
+Paramètres et l’aperçu proposent une archive ZIP version 2 : données structurées et tous les originaux, y compris la corbeille. `/api/export` est désormais un alias de `/api/backup` et renvoie du ZIP. Aucun chemin disque, mot de passe, jeton, session ou invitation n’est exporté.
+
+La restauration est réservée aux administrateurs. Une première étape vérifie le manifeste, les identifiants, les associations, les tailles et les empreintes SHA-256. Après aperçu, il faut écrire `RESTAURER` pour remplacer les données du foyer. Les comptes, accès et préférences personnelles de rappel sont conservés ; les auteurs antérieurs restent mentionnés dans les comptes rendus. Les identifiants métiers et clés de stockage sont régénérés pour empêcher les collisions. Les nouveaux fichiers sont préparés avant la transaction ; les anciens sont retirés après validation. Les données d’un autre foyer ne sont jamais remplacées.
+
+Limites explicites : archive compressée 100 Mo, contenu décompressé 250 Mo, 2 000 entrées, manifeste 10 Mo, 10 Mo par original et 50 000 lignes par catégorie. Pour une installation plus grande ou une restauration intégrale des comptes, conserver la méthode `pg_dump` + volume décrite dans README. Une sauvegarde volumineuse est refusée, jamais tronquée. Un échec de nettoyage disque après validation peut laisser un fichier orphelin ; une sauvegarde serveur reste nécessaire.
+
+## Mise à jour manuelle
+
+Après fusion par le propriétaire, sauvegarder ensemble la base et les fichiers, puis :
 
 ```bash
 git switch main
 git pull --ff-only
 docker compose build
-docker compose stop app
+docker compose stop app worker
 docker compose --profile tools run --rm migrate
-docker compose up -d app
+docker compose up -d app worker
 ```
 
-Les migrations `0001_productive_naoko.sql` et `0002_lovely_amphibian.sql` ajoutent sept tables et leurs index de foyer. Aucun effacement des données des fondations.
+Les migrations `0003_overconfident_human_torch.sql` et `0004_numerous_nightcrawler.sql` ajoutent les révisions, corbeilles, détails d’achat/intervention, OCR et tables de récupération/rappels/reprise hors ligne. Elles initialisent les révisions à zéro et remplissent les titres des anciens comptes rendus, sans supprimer les données.
 
-`DOCUMENTS_DIR` est déjà configuré par Compose (`/app/data/documents` avec volume persistant). En local, sa valeur par défaut est `./data/documents` ; le processus doit pouvoir écrire dans ce dossier. Aucun nouveau secret requis. Les Server Actions acceptent un corps de 11 Mo pour permettre un fichier de 10 Mo et ses métadonnées. Adapter aussi la limite du reverse proxy si nécessaire.
-
-Option de connexion locale : `DATABASE_POOL_SIZE` (1 à 100, défaut 10). Le banc de test utilise 1 pour le transport PGlite ; Compose conserve le défaut.
-
-## Comportements et limites
-
-- Toutes les associations, lectures et mutations sont bornées au foyer choisi côté serveur. Les téléchargements et exports relisent la session et l’appartenance à chaque requête. Aucun chemin disque n’est accepté depuis le navigateur.
-- Les originaux sont nommés par UUID sur disque, avec permissions restreintes. Le type est détecté par signature, jamais par le nom ou le MIME déclaré. Ce contrôle de format ne constitue pas un antivirus ou une validation exhaustive du contenu. Les PDF sont téléchargés en pièce jointe, les images seules peuvent être affichées inline ; `nosniff`, CSP sandbox et absence de cache partagé.
-- La fin de mois conserve le jour d’ancrage : 31 janvier → 28/29 février → 31 mars. Les calculs portent sur des dates civiles et ne changent pas avec l’heure d’été.
-- Une réalisation tardive avance une récurrence fixe jusqu’à la prochaine échéance future ; les dates sautées ne créent pas d’interventions fictives. La validation vérifie la date attendue sous verrou transactionnel pour empêcher un double enregistrement depuis un planning périmé.
-- Les pièces, appareils et tâches sont archivés plutôt que supprimés pour conserver les références et l’historique. Les pièces archivées n’archivent pas leurs appareils.
-- L’export JSON inclut les données structurées et les métadonnées/liens de téléchargement. Il n’inclut pas les originaux et ne remplace pas une sauvegarde base + volume. Pas d’import dans cette version.
-- Pas de notifications automatiques, OCR, mode hors ligne, WebSocket ni sélection de plusieurs foyers. Le calendrier est une vue de planning par mois et par jour, sans glisser-déposer.
-- La recherche et les pages chargent les données du foyer en mémoire : adapté à un foyer, pas à un catalogue de dizaines de milliers d’objets. Pas encore de pagination ni suppression/modification des documents déposés.
+Les fichiers restent dans `DOCUMENTS_DIR`, partagé entre app et worker avec le même utilisateur Docker. Les formulaires de dépôt utilisent la limite Next de 11 Mo. La route de restauration limite son propre flux à 101 Mo avec l’enveloppe multipart ; adapter aussi la limite et le délai du reverse proxy. Les archives sont traitées en mémoire : prévoir de la mémoire disponible et éviter les restaurations simultanées. Ne pas rétrograder le code sans restaurer un ensemble base/fichiers cohérent.
 
 ## Vérifications
 
-`npm run lint`, `npm run typecheck`, `npm test`, `npm run build`, puis `npm run test:e2e` (Chromium requis).
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm run test:e2e
+TEST_POSTGRES_URL=postgresql://… npm run test:postgres
+```
 
-Tests PostgreSQL/PGlite : isolation des foyers, refus des associations étrangères, mutations, archivage/restauration, invalidité des dates, récurrences et fins de mois, historiques, planning périmé, listes et cascade, signatures/taille et chemins privés.
+Les tests en mémoire utilisent PGlite uniquement dans les tests. La suite PostgreSQL natif ouvre deux connexions et deux comptes, crée une base jetable `lehub_concurrency_<uuid>`, applique les migrations et vérifie les modifications/validations concurrentes, les achats explicites, les reprises idempotentes et le conflit suppression/modification. L’URL doit viser un serveur de test avec le droit CREATE DATABASE ; sa base existante n’est jamais migrée ni effacée. La base créée est supprimée à la fin. Aucun pipeline CI ou déploiement automatique.
 
-Parcours navigateur : fondations, pièce/appareil, dépôt et téléchargement, refus sans session, entretien récurrent et historique, courses entre deux membres, recherche, export, garanties, thèmes et largeur mobile, révocation immédiate de l’accès aux fichiers et à l’export.
-
-Les captures de cette PR utilisent uniquement des données fictives dans une base et un dossier éphémères.
+Les captures utilisent exclusivement des données fictives dans une base et un dossier temporaires. Le modèle conserve la sélection déterministe d’un seul foyer ; le sélecteur de foyer et le glisser-déposer dans le calendrier restent des évolutions distinctes.

@@ -57,7 +57,7 @@ export default async function HomeLayout({
       </aside>
       <main
         id="main"
-        className="mx-auto max-w-6xl px-6 py-9 sm:px-10 lg:px-14 lg:py-12"
+        className="mx-auto max-w-6xl px-5 pt-9 pb-28 md:pb-9 sm:px-10 lg:px-14 lg:py-12"
       >
         {children}
       </main>

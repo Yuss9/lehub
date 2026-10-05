@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 export const MAX_FILE_SIZE = 10 * 1024 * 1024;
 export function detectMime(buffer: Buffer) {
   if (buffer.subarray(0, 5).toString() === "%PDF-") return "application/pdf";
@@ -31,6 +32,18 @@ export async function saveFile(file: File, photo = false) {
   const mime = detectMime(buffer);
   if (photo && !mime.startsWith("image/"))
     throw new Error("Une photo doit être une image.");
+  if (mime.startsWith("image/")) {
+    try {
+      const info = await sharp(buffer, {
+        limitInputPixels: 40000000,
+      }).metadata();
+      if (!info.width || !info.height) throw new Error();
+    } catch {
+      throw new Error(
+        "Image invalide ou trop grande (40 millions de pixels maximum).",
+      );
+    }
+  }
   const key = randomUUID();
   await mkdir(path.dirname(location(key)), { recursive: true, mode: 0o700 });
   await writeFile(location(key), buffer, { flag: "wx", mode: 0o600 });
@@ -39,3 +52,5 @@ export async function saveFile(file: File, photo = false) {
 export const readPrivateFile = async (key: string) =>
   readFile(/* turbopackIgnore: true */ location(key));
 export const removePrivateFile = (key: string) => unlink(location(key));
+
+export const filePath = location;
