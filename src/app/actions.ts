@@ -1,11 +1,11 @@
 "use server";
-import { headers } from "next/headers";
+import { headers, cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { db } from "@/db";
 import { getAuth } from "@/lib/auth";
-import { getContext } from "@/lib/context";
+import { formContext } from "@/lib/context";
 import {
   acceptInvitation,
   createInvitation,
@@ -14,6 +14,9 @@ import {
   revokeInvitation,
   setupHousehold,
   updateHousehold,
+  createHousehold,
+  manageMember,
+  requireMembership,
 } from "@/lib/domain";
 
 export type ActionState = { error?: string; success?: string; link?: string };
@@ -73,9 +76,10 @@ export async function householdAction(
   _: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const context = await getContext();
   try {
+    const context = await formContext(form);
     await updateHousehold(db, context.user.id, context.household.id, {
+      revision: value(form, "revision"),
       name: value(form, "name"),
       currency: value(form, "currency"),
       timezone: value(form, "timezone"),
@@ -90,8 +94,8 @@ export async function inviteAction(
   _: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const context = await getContext();
   try {
+    const context = await formContext(form);
     const token = await createInvitation(
       db,
       context.user.id,
@@ -116,8 +120,8 @@ export async function revokeAction(
   _: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const context = await getContext();
   try {
+    const context = await formContext(form);
     await revokeInvitation(
       db,
       context.user.id,
@@ -134,8 +138,8 @@ export async function removeAction(
   _: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const context = await getContext();
   try {
+    const context = await formContext(form);
     await removeMember(
       db,
       context.user.id,
@@ -144,6 +148,63 @@ export async function removeAction(
     );
     revalidatePath("/settings");
     return { success: "Membre retiré du foyer." };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function householdSelectAction(
+  _: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  try {
+    const context = await formContext(form);
+    const id = z.uuid().parse(form.get("householdId"));
+    await requireMembership(db, context.user.id, id);
+    (await cookies()).set("lehub-household", id, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.BETTER_AUTH_URL?.startsWith("https:"),
+      path: "/",
+      maxAge: 31536000,
+    });
+    revalidatePath("/", "layout");
+    return {
+      success:
+        "Foyer sélectionné. Les formulaires des autres onglets doivent être actualisés.",
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+export async function householdCreateAction(
+  _: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  try {
+    const context = await formContext(form);
+    await createHousehold(db, context.user.id, Object.fromEntries(form));
+    revalidatePath("/settings");
+    return { success: "Foyer créé. Tu peux maintenant le sélectionner." };
+  } catch (error) {
+    return failure(error);
+  }
+}
+export async function memberRoleAction(
+  _: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  try {
+    const context = await formContext(form);
+    await manageMember(
+      db,
+      context.user.id,
+      context.household.id,
+      value(form, "userId"),
+      z.enum(["admin", "member"]).parse(form.get("role")),
+    );
+    revalidatePath("/", "layout");
+    return { success: "Rôle enregistré." };
   } catch (error) {
     return failure(error);
   }

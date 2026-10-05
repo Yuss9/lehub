@@ -5,12 +5,12 @@
 
 3. **Parcours complets** : protections de concurrence, gestion des fichiers, rappels, récupération d’accès, entretiens flexibles, courses hors ligne, fiches équipement, sauvegarde/restauration, calendrier, OCR, tags et pagination.
 
+4. **Exploitation et collaboration** : stockage hors ligne transactionnel, conflits par article, suivi des workers et distributions, sauvegardes serveur chiffrées avec restauration de contrôle, aperçu PDF et correction OCR, dépenses et corrections d’historique, push, sélection de foyers et gestion des administrateurs. Voir [OPERATIONS.md](OPERATIONS.md) pour les limites et le harnais de validation native.
+
 Les modifications sont proposées dans une branche dédiée et une PR vers `main`. Le propriétaire révise et fusionne ; aucun pipeline ou déploiement automatique.
 
 ## Évolutions possibles
 
-- Sélecteur de foyer et administration de plusieurs foyers.
-- Notifications push et glisser-déposer dans le calendrier.
-- Aperçu PDF intégré.
+- Glisser-déposer dans le calendrier.
 
 L’interface utilise exclusivement les données réelles de PostgreSQL. Aucun jeu de démonstration en production. Les limites actuelles et instructions de migration sont décrites dans HOME-MODULES.md et README.md.

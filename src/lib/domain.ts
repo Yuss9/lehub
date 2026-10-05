@@ -5,6 +5,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
+import { revisionSchema } from "./value-schemas";
 import { hashPassword } from "better-auth/crypto";
 import type { db as productionDb } from "@/db";
 import {
@@ -63,15 +64,13 @@ async function provision(
   await tx
     .insert(user)
     .values({ id, name: input.name, email: input.email, emailVerified: false });
-  await tx
-    .insert(account)
-    .values({
-      id: randomUUID(),
-      userId: id,
-      accountId: id,
-      providerId: "credential",
-      password: passwordHash,
-    });
+  await tx.insert(account).values({
+    id: randomUUID(),
+    userId: id,
+    accountId: id,
+    providerId: "credential",
+    password: passwordHash,
+  });
   return id;
 }
 export async function setupHousehold(
@@ -112,16 +111,14 @@ export async function createInvitation(
   await requireMembership(database, actorId, householdId, true);
   const email = emailSchema.parse(rawEmail);
   const token = randomBytes(32).toString("base64url");
-  await database
-    .insert(invitation)
-    .values({
-      id: randomUUID(),
-      householdId,
-      email,
-      tokenHash: tokenHash(token),
-      createdBy: actorId,
-      expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-    });
+  await database.insert(invitation).values({
+    id: randomUUID(),
+    householdId,
+    email,
+    tokenHash: tokenHash(token),
+    createdBy: actorId,
+    expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+  });
   return token;
 }
 export async function acceptInvitation(
@@ -180,10 +177,19 @@ export async function updateHousehold(
   raw: unknown,
 ) {
   await requireMembership(database, actorId, householdId, true);
-  await database
+  const expected = revisionSchema.parse(
+    (raw as { revision?: unknown }).revision ?? 0,
+  );
+  const changed = await database
     .update(household)
-    .set(householdSchema.parse(raw))
-    .where(eq(household.id, householdId));
+    .set({
+      ...householdSchema.parse(raw),
+      revision: sql`${household.revision} + 1`,
+    })
+    .where(and(eq(household.id, householdId), eq(household.revision, expected)))
+    .returning();
+  if (!changed.length)
+    throw new DomainError("Les paramètres ont changé. Actualise la page.");
 }
 export async function revokeInvitation(
   database: Database,
@@ -203,17 +209,74 @@ export async function removeMember(
   householdId: string,
   targetId: string,
 ) {
-  await requireMembership(database, actorId, householdId, true);
   if (actorId === targetId)
     throw new DomainError("Tu ne peux pas te retirer toi-même.");
-  // Initial UI only invites members. Administrators cannot be removed here.
-  await database
-    .delete(membership)
-    .where(
-      and(
-        eq(membership.householdId, householdId),
-        eq(membership.userId, targetId),
-        eq(membership.role, "member"),
-      ),
+  await manageMember(database, actorId, householdId, targetId, "remove");
+}
+export async function manageMember(
+  database: Database,
+  actorId: string,
+  householdId: string,
+  targetId: string,
+  role: "admin" | "member" | "remove",
+) {
+  return database.transaction(async (tx) => {
+    await tx
+      .select()
+      .from(household)
+      .where(eq(household.id, householdId))
+      .for("update");
+    await requireMembership(
+      tx as unknown as Database,
+      actorId,
+      householdId,
+      true,
     );
+    const members = await tx
+      .select()
+      .from(membership)
+      .where(eq(membership.householdId, householdId));
+    const target = members.find((m) => m.userId === targetId);
+    if (!target) throw new DomainError("Membre introuvable.");
+    if (
+      target.role === "admin" &&
+      role !== "admin" &&
+      members.filter((m) => m.role === "admin").length <= 1
+    )
+      throw new DomainError("Le foyer doit garder au moins un administrateur.");
+    const scope = and(
+      eq(membership.householdId, householdId),
+      eq(membership.userId, targetId),
+    );
+    if (role === "remove") await tx.delete(membership).where(scope);
+    else await tx.update(membership).set({ role }).where(scope);
+  });
+}
+export async function createHousehold(
+  database: Database,
+  actorId: string,
+  raw: unknown,
+) {
+  const data = householdSchema.parse(raw);
+  return database.transaction(async (tx) => {
+    // Serialize creation by account; prevent accidental unbounded double submissions.
+    const [actor] = await tx
+      .select()
+      .from(user)
+      .where(eq(user.id, actorId))
+      .for("update");
+    if (!actor) throw new DomainError("Compte introuvable.");
+    const homes = await tx
+      .select()
+      .from(membership)
+      .where(eq(membership.userId, actorId));
+    if (homes.length >= 20)
+      throw new DomainError("Maximum 20 foyers par compte.");
+    const id = randomUUID();
+    await tx.insert(household).values({ id, ...data });
+    await tx
+      .insert(membership)
+      .values({ householdId: id, userId: actorId, role: "admin" });
+    return id;
+  });
 }

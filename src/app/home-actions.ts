@@ -4,7 +4,7 @@ import { z } from "zod";
 import { and, eq, sql, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { document, maintenance, reminderPreference } from "@/db/schema";
-import { getContext } from "@/lib/context";
+import { formContext } from "@/lib/context";
 import {
   saveEntity,
   changeEntity,
@@ -22,8 +22,8 @@ export async function homeAction(
   _: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const context = await getContext();
   try {
+    const context = await formContext(form);
     const operation = String(form.get("operation") || "save");
     const entity = z
       .enum([
@@ -56,10 +56,42 @@ export async function homeAction(
         revision,
         file,
       );
+    } else if (operation === "text" && entity === "document") {
+      const extractedText = z
+        .string()
+        .max(200000)
+        .parse(form.get("extractedText"));
+      const rows = await db
+        .update(document)
+        .set({
+          extractedText,
+          ocrStatus: "manual",
+          ocrFinishedAt: new Date(),
+          ocrStartedAt: null,
+          ocrError: "",
+          revision: sql`${document.revision} + 1`,
+        })
+        .where(
+          and(
+            eq(document.id, id),
+            eq(document.householdId, context.household.id),
+            eq(document.revision, revisionSchema.parse(revision)),
+            isNull(document.deletedAt),
+          ),
+        )
+        .returning();
+      if (!rows.length)
+        throw new DomainError("Le document a changé. Actualise la page.");
     } else if (operation === "ocr" && entity === "document") {
       const changed = await db
         .update(document)
-        .set({ ocrStatus: "pending", revision: sql`${document.revision} + 1` })
+        .set({
+          ocrStatus: "pending",
+          ocrStartedAt: null,
+          ocrFinishedAt: null,
+          ocrError: "",
+          revision: sql`${document.revision} + 1`,
+        })
         .where(
           and(
             eq(document.id, id),
@@ -168,8 +200,8 @@ export async function reminderAction(
   _: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  const { household, user } = await getContext();
   try {
+    const { household, user } = await formContext(form);
     const leadDays = z.coerce
       .number()
       .int()

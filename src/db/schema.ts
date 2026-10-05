@@ -101,6 +101,7 @@ export const rateLimit = pgTable("rate_limit", {
 });
 export const household = pgTable("household", {
   id: text().primaryKey(),
+  revision: integer().notNull().default(0),
   name: text().notNull(),
   currency: text().notNull().default("EUR"),
   timezone: text().notNull().default("Europe/Paris"),
@@ -225,6 +226,7 @@ export const intervention = pgTable(
   "intervention",
   {
     id: text().primaryKey(),
+    revision: integer().notNull().default(0),
     householdId: text("household_id")
       .notNull()
       .references(() => household.id, { onDelete: "cascade" }),
@@ -295,6 +297,8 @@ export const document = pgTable(
     }),
     tags: text().notNull().default(""),
     extractedText: text("extracted_text").notNull().default(""),
+    ocrFinishedAt: timestamp("ocr_finished_at", { withTimezone: true }),
+    ocrError: text("ocr_error").notNull().default(""),
     ocrStartedAt: timestamp("ocr_started_at", { withTimezone: true }),
     ocrStatus: text("ocr_status").notNull().default("pending"),
     title: text().notNull(),
@@ -327,6 +331,7 @@ export const reminderPreference = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    pushEnabled: boolean("push_enabled").notNull().default(false),
     emailEnabled: boolean("email_enabled").notNull().default(false),
     leadDays: integer("lead_days").notNull().default(7),
   },
@@ -342,6 +347,11 @@ export const reminderDelivery = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    channel: text().notNull().default("email"),
+    lastError: text("last_error").notNull().default(""),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     kind: text().notNull(),
     targetId: text("target_id").notNull(),
     dueOn: text("due_on").notNull(),
@@ -359,6 +369,7 @@ export const reminderDelivery = pgTable(
       t.kind,
       t.targetId,
       t.dueOn,
+      t.channel,
     ),
   ],
 );
@@ -374,3 +385,37 @@ export const offlineMutation = pgTable("offline_mutation", {
     .notNull()
     .defaultNow(),
 });
+
+export const workerState = pgTable("worker_state", {
+  id: text().primaryKey(),
+  heartbeatAt: timestamp("heartbeat_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  lastError: text("last_error").notNull().default(""),
+});
+export const pushSubscription = pgTable(
+  "push_subscription",
+  {
+    id: text().primaryKey(),
+    householdId: text("household_id")
+      .notNull()
+      .references(() => household.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    endpoint: text().notNull(),
+    p256dh: text().notNull(),
+    auth: text().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("push_owner_endpoint_idx").on(
+      t.householdId,
+      t.userId,
+      t.endpoint,
+    ),
+  ],
+);

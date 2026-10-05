@@ -1,5 +1,5 @@
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
-import { readFile } from "node:fs/promises";
+import { migrate } from "drizzle-orm/pglite/migrator";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { and, eq } from "drizzle-orm";
@@ -50,12 +50,7 @@ const request = (path: string, body: unknown, cookie?: string) =>
 let adminCookie: string;
 
 beforeAll(async () => {
-  await client.exec(
-    await readFile(
-      new URL("../drizzle/0000_cuddly_wasp.sql", import.meta.url),
-      "utf8",
-    ),
-  );
+  await migrate(drizzle(client), { migrationsFolder: "./drizzle" });
 });
 afterAll(async () => {
   await client.close();
