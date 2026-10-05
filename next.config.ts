@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const config: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  experimental: { serverActions: { bodySizeLimit: "11mb" } },
   async headers() {
     return [
       {

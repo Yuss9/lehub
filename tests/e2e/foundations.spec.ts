@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import { exerciseHome } from "./home-flow";
+test.setTimeout(120000);
 
 test("first run, private household, invitation, settings and responsive themes", async ({
   page,
@@ -133,5 +135,6 @@ test("first run, private household, invitation, settings and responsive themes",
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  await exerciseHome(page, browser);
   expect(errors).toEqual([]);
 });

@@ -160,3 +160,132 @@ export const invitation = pgTable(
   },
   (t) => [index("invitation_household_idx").on(t.householdId)],
 );
+
+export const room = pgTable(
+  "room",
+  {
+    id: text().primaryKey(),
+    householdId: text("household_id")
+      .notNull()
+      .references(() => household.id, { onDelete: "cascade" }),
+    name: text().notNull(),
+    description: text().notNull().default(""),
+    position: integer().notNull().default(0),
+    archived: boolean().notNull().default(false),
+  },
+  (t) => [index("room_household_idx").on(t.householdId)],
+);
+export const equipment = pgTable(
+  "equipment",
+  {
+    id: text().primaryKey(),
+    householdId: text("household_id")
+      .notNull()
+      .references(() => household.id, { onDelete: "cascade" }),
+    roomId: text("room_id").references(() => room.id, { onDelete: "set null" }),
+    name: text().notNull(),
+    brand: text().notNull().default(""),
+    model: text().notNull().default(""),
+    serial: text().notNull().default(""),
+    notes: text().notNull().default(""),
+    purchasedOn: text("purchased_on"),
+    warrantyUntil: text("warranty_until"),
+    archived: boolean().notNull().default(false),
+  },
+  (t) => [index("equipment_household_idx").on(t.householdId)],
+);
+export const maintenance = pgTable(
+  "maintenance",
+  {
+    id: text().primaryKey(),
+    householdId: text("household_id")
+      .notNull()
+      .references(() => household.id, { onDelete: "cascade" }),
+    equipmentId: text("equipment_id").references(() => equipment.id, {
+      onDelete: "set null",
+    }),
+    title: text().notNull(),
+    notes: text().notNull().default(""),
+    dueOn: text("due_on").notNull(),
+    frequency: text().notNull().default("once"),
+    interval: integer().notNull().default(1),
+    recurrenceMode: text("recurrence_mode").notNull().default("fixed"),
+    anchorDay: integer("anchor_day").notNull(),
+    archived: boolean().notNull().default(false),
+  },
+  (t) => [index("maintenance_household_idx").on(t.householdId)],
+);
+export const intervention = pgTable(
+  "intervention",
+  {
+    id: text().primaryKey(),
+    householdId: text("household_id")
+      .notNull()
+      .references(() => household.id, { onDelete: "cascade" }),
+    maintenanceId: text("maintenance_id")
+      .notNull()
+      .references(() => maintenance.id, { onDelete: "cascade" }),
+    completedOn: text("completed_on").notNull(),
+    scheduledOn: text("scheduled_on").notNull(),
+    notes: text().notNull().default(""),
+    completedBy: text("completed_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => [index("intervention_household_idx").on(t.householdId)],
+);
+export const shoppingList = pgTable(
+  "shopping_list",
+  {
+    id: text().primaryKey(),
+    householdId: text("household_id")
+      .notNull()
+      .references(() => household.id, { onDelete: "cascade" }),
+    name: text().notNull(),
+  },
+  (t) => [index("shoppingList_household_idx").on(t.householdId)],
+);
+export const shoppingItem = pgTable(
+  "shopping_item",
+  {
+    id: text().primaryKey(),
+    householdId: text("household_id")
+      .notNull()
+      .references(() => household.id, { onDelete: "cascade" }),
+    listId: text("list_id")
+      .notNull()
+      .references(() => shoppingList.id, { onDelete: "cascade" }),
+    name: text().notNull(),
+    quantity: text().notNull().default("1"),
+    checked: boolean().notNull().default(false),
+    equipmentId: text("equipment_id").references(() => equipment.id, {
+      onDelete: "set null",
+    }),
+    maintenanceId: text("maintenance_id").references(() => maintenance.id, {
+      onDelete: "set null",
+    }),
+  },
+  (t) => [index("shoppingItem_household_idx").on(t.householdId)],
+);
+export const document = pgTable(
+  "document",
+  {
+    id: text().primaryKey(),
+    householdId: text("household_id")
+      .notNull()
+      .references(() => household.id, { onDelete: "cascade" }),
+    equipmentId: text("equipment_id").references(() => equipment.id, {
+      onDelete: "set null",
+    }),
+    title: text().notNull(),
+    category: text().notNull(),
+    originalName: text("original_name").notNull(),
+    mime: text().notNull(),
+    size: integer().notNull(),
+    storageKey: text("storage_key").notNull().unique(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("document_household_idx").on(t.householdId)],
+);

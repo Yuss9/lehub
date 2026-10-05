@@ -2,7 +2,7 @@
 
 Le foyer, simplement. Application gratuite à héberger chez soi, en français, avec une interface sobre et responsive.
 
-**Premier lot : fondations.** Comptes privés, configuration initiale, foyer, invitations, membres, paramètres, thèmes. Les pièces, équipements, entretiens, courses et documents seront livrés dans des PR distinctes : voir [la feuille de route](docs/ROADMAP.md).
+Comptes privés, foyer partagé, pièces et équipements, entretiens récurrents, courses, documents privés, recherche globale et export JSON. Voir [les modules du foyer](docs/HOME-MODULES.md).
 
 ## Stack
 
@@ -31,7 +31,7 @@ Générer trois valeurs **différentes** avec `openssl rand -hex 32`, puis rense
 | `BETTER_AUTH_URL` | URL publique exacte, sans chemin : `https://lehub.example.com`, ou `http://localhost:3000` pour usage local. |
 | `DATABASE_URL` | Pour les commandes locales uniquement. Compose la construit avec les variables PostgreSQL. |
 | `POSTGRES_USER`, `POSTGRES_DB` | `lehub` par défaut. |
-| `DOCUMENTS_DIR` | Emplacement réservé aux futurs fichiers, `/app/data/documents` dans Docker. |
+| `DOCUMENTS_DIR` | Emplacement des documents et photos privés, `/app/data/documents` dans Docker. |
 
 Ne pas ajouter le fichier `.env` au dépôt.
 
@@ -72,7 +72,7 @@ Après validation et fusion manuelle de la PR :
 
 En cas d’échec de migration, laisser l’app arrêtée et examiner l’erreur. Ne pas rétrograder le code sur un schéma incompatible ; restaurer ensemble la base et les fichiers si nécessaire.
 
-## Utilisation du premier lot
+## Comptes et foyer
 
 - L’administrateur personnalise le nom du foyer, la devise et le fuseau dans **Paramètres**.
 - Il crée un lien d’invitation associé à un email, valable 48 heures et utilisable une seule fois. Le lien n’est montré qu’à sa création ; seule son empreinte SHA-256 est conservée. Le transmettre par le canal de son choix.
@@ -93,7 +93,7 @@ npm run db:migrate
 npm run dev
 ```
 
-Next.js lit `.env`. Le script de migration lit également `.env` si présent ; les variables déjà définies dans le processus restent prioritaires. Les données de l’application viennent toujours de PostgreSQL. Pas de seed de démonstration dans ce lot.
+Next.js lit `.env`. Le script de migration lit également `.env` si présent ; les variables déjà définies dans le processus restent prioritaires. Les données de l’application viennent toujours de PostgreSQL. Pas de seed de démonstration.
 
 Après modification du schéma : `npm run db:generate`, inspecter et versionner `drizzle/`, puis `npm run db:migrate`. Ne pas remplacer les migrations par `drizzle-kit push` en production.
 
@@ -113,7 +113,7 @@ L’override ciblé `@esbuild-kit/core-utils > esbuild` corrige l’ancienne dé
 
 ## Sauvegarde et restauration
 
-La base et le volume documents forment un ensemble. Le volume est déjà prévu, même si l’upload n’arrive qu’au lot Documents. Conserver également `.env` (secrets inclus) de façon chiffrée hors du serveur. Les sauvegardes contiennent des données privées.
+La base et le volume documents forment un ensemble. Les originaux et les photos sont conservés dans le volume documents. Conserver également `.env` (secrets inclus) de façon chiffrée hors du serveur. Les sauvegardes contiennent des données privées.
 
 ### Sauvegarde cohérente
 
@@ -144,7 +144,7 @@ docker compose -p lehub-restore --profile tools run --rm migrate
 docker compose -p lehub-restore up -d app
 ```
 
-Construire les images dans ce checkout si nécessaire avant la restauration. Vérifier la connexion, les membres et les paramètres avant de considérer la restauration terminée. Garder les anciens volumes jusqu’à validation. La configuration du reverse proxy doit pointer vers cette instance. L’export utilisateur des données structurées est prévu au lot 6 ; `pg_dump` fournit dès maintenant la sauvegarde complète administrateur.
+Construire les images dans ce checkout si nécessaire avant la restauration. Vérifier la connexion, les membres et les paramètres avant de considérer la restauration terminée. Garder les anciens volumes jusqu’à validation. La configuration du reverse proxy doit pointer vers cette instance. L’export JSON est accessible depuis l’aperçu et contient les métadonnées et liens des documents, sans leurs fichiers binaires ; `pg_dump` fournit dès maintenant la sauvegarde complète administrateur.
 
 ## Contributions
 
@@ -155,3 +155,4 @@ Lire [AGENTS.md](AGENTS.md). Une branche dédiée et une PR vers `main` par lot,
 Après `npm run build`, installer Chromium avec `npx playwright install chromium`, puis lancer `npm run test:e2e`. Les ports locaux 3000 et 54329 doivent être libres. Le script démarre le serveur **standalone de production** et une base PGlite éphémère dédiée, applique les migrations, teste les parcours et arrête les processus. Il ne réutilise pas la base de `.env`. Les identifiants `example.test` présents dans les tests sont fictifs et n’existent jamais dans l’installation normale.
 
 Pour utiliser un navigateur déjà installé : `CHROMIUM_EXECUTABLE_PATH=/chemin/vers/chromium npm run test:e2e`. Les captures sont enregistrées dans `docs/screenshots/` avec les animations suspendues.
+
