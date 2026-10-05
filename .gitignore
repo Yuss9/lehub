@@ -7,3 +7,8 @@ coverage/
 data/
 test-results/
 backups/
+
+
+# Credentials for offsite backups
+rclone.conf
+backup-config/

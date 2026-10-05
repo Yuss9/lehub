@@ -21,6 +21,15 @@ export function SignOut() {
           setPending(true);
           setError(false);
           try {
+            // Retire the browser endpoint before ending the session. Session deletion
+            // also cascades to server subscriptions, including other households.
+            try {
+              if ("serviceWorker" in navigator) {
+                const registration = await navigator.serviceWorker.getRegistration();
+                const subscription = await registration?.pushManager?.getSubscription();
+                if (subscription) await subscription.unsubscribe();
+              }
+            } catch { /* Server session deletion remains authoritative if browser cleanup fails. */ }
             const result = await authClient.signOut();
             if (result.error) throw Error();
             await clearShopping();

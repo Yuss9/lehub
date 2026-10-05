@@ -7,6 +7,8 @@
 
 4. **Exploitation et collaboration** : stockage hors ligne transactionnel, conflits par article, suivi des workers et distributions, sauvegardes serveur chiffrées avec restauration de contrôle, aperçu PDF et correction OCR, dépenses et corrections d’historique, push, sélection de foyers et gestion des administrateurs. Voir [OPERATIONS.md](OPERATIONS.md) pour les limites et le harnais de validation native.
 
+5. **Fiabilité des appareils et exploitation** : désactivation hors ligne par foyer avec confirmation atomique, abonnements push liés aux sessions, reçus par appareil, révocation d’accès, traces des corrections, lots OCR, copie distante vérifiée et surveillance indépendante. Voir [RELIABILITY.md](RELIABILITY.md).
+
 Les modifications sont proposées dans une branche dédiée et une PR vers `main`. Le propriétaire révise et fusionne ; aucun pipeline ou déploiement automatique.
 
 ## Évolutions possibles

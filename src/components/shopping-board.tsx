@@ -4,6 +4,7 @@ import { Button } from "./ui/button";
 import { Field } from "./form";
 import {
   clearShopping,
+  removeShopping,
   projectShopping,
   readShopping,
   writeShopping,
@@ -37,10 +38,31 @@ export function ShoppingBoard({
   const [edit, setEdit] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const current = useRef(local);
+  const generation = useRef(0);
   const opted = useRef(false);
   const syncing = useRef(false);
   const writes = useRef(0);
   const [saving, setSaving] = useState(false);
+  const [discardPending, setDiscardPending] = useState<LocalShopping | null>(null);
+  const [disabling, setDisabling] = useState(false);
+  async function disableOffline(confirmedIds: string[] = []) {
+    if (writes.current > 0) { setMessage("Attends la fin de l’enregistrement avant de désactiver le hors ligne."); return; }
+    setDisabling(true);
+    try {
+      const pending = await removeShopping(current.current!.state.scope, confirmedIds);
+      if (pending) { setDiscardPending(pending); return; }
+      generation.current++;
+      opted.current = false;
+      setEnabled(false);
+      setCacheReady(false);
+      setDiscardPending(null);
+      const next = { ...current.current!, queue: [] };
+      current.current = next;
+      setLocal(next);
+      setMessage("");
+    } catch { setMessage("Effacement impossible. Les changements sont conservés."); }
+    finally { setDisabling(false); }
+  }
   async function persist(change: (value: LocalShopping) => LocalShopping) {
     if (!current.current) return;
     writes.current++;
@@ -48,10 +70,10 @@ export function ShoppingBoard({
     try {
       const next = opted.current
         ? await updateShopping(
-            current.current.state.scope,
-            current.current,
-            change,
-          )
+          current.current.state.scope,
+          current.current,
+          change,
+        )
         : change(current.current);
       current.current = next;
       setLocal(next);
@@ -69,6 +91,7 @@ export function ShoppingBoard({
     else await synchronizeNow();
   }
   async function synchronizeNow() {
+    const epoch = generation.current;
     if (syncing.current || !navigator.onLine) return;
     syncing.current = true;
     setBusy(true);
@@ -83,6 +106,7 @@ export function ShoppingBoard({
       }
       if (!response.ok) throw Error("Actualisation impossible.");
       const server: ShoppingState = await response.json();
+      if (epoch !== generation.current) return;
       if (current.current && current.current.state.scope !== server.scope) {
         if (
           current.current.state.scope.split(":")[0] !==
@@ -97,8 +121,14 @@ export function ShoppingBoard({
         );
         return;
       }
+      if (!current.current) {
+        current.current = { state: server, queue: [], savedAt: new Date().toISOString() };
+        setLocal(current.current);
+        setListId(selectedList || server.lists[0]?.id || "");
+      }
       if (opted.current) {
         const cached = await readShopping(current.current?.state.scope);
+        if (epoch !== generation.current) return;
         if (!cached || cached.state.scope !== server.scope) return;
         current.current = cached;
         setLocal(cached);
@@ -106,12 +136,14 @@ export function ShoppingBoard({
       const queue = current.current?.queue || [];
       const blocked = new Set(queue.filter((m) => m.conflict).map((m) => m.id));
       for (const mutation of [...queue]) {
+        if (epoch !== generation.current) return;
         if (blocked.has(mutation.id)) continue;
         const sent = await fetch("/api/shopping", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ scope: server.scope, mutation }),
         });
+        if (epoch !== generation.current) return;
         if (sent.status === 401) {
           await clearShopping();
           current.current = null;
@@ -146,6 +178,7 @@ export function ShoppingBoard({
       const refreshed = await fetch("/api/shopping", { cache: "no-store" });
       if (!refreshed.ok) throw Error();
       const state: ShoppingState = await refreshed.json();
+      if (epoch !== generation.current) return;
       if (state.scope !== server.scope) {
         setMessage(
           "Le foyer actif a changé pendant la synchronisation. Actualise la page ; tes changements restent conservés.",
@@ -200,9 +233,13 @@ export function ShoppingBoard({
         if (cached && cached.state.scope === current.current?.state.scope) {
           current.current = cached;
           setLocal(cached);
-        } else {
+        } else if (opted.current) {
+          generation.current++;
           opted.current = false;
           setEnabled(false);
+          const next = { ...current.current!, queue: [] };
+          current.current = next;
+          setLocal(next);
         }
       });
     });
@@ -218,8 +255,11 @@ export function ShoppingBoard({
     };
     window.addEventListener("beforeunload", leaving);
     const purge = () => {
+      generation.current++;
       opted.current = false;
       setEnabled(false);
+      current.current = null;
+      setLocal(null);
     };
     window.addEventListener("online", update);
     window.addEventListener("offline", update);
@@ -333,7 +373,9 @@ export function ShoppingBoard({
           <input
             type="checkbox"
             checked={enabled}
+            disabled={disabling || saving}
             onChange={(e) => {
+              if (!e.target.checked) { void disableOffline(); return; }
               opted.current = e.target.checked;
               setEnabled(e.target.checked);
               setCacheReady(false);
@@ -345,11 +387,21 @@ export function ShoppingBoard({
                     setEnabled(false);
                     setMessage("Stockage indisponible.");
                   });
-              else void clearShopping();
+
             }}
           />{" "}
           Conserver mes courses hors ligne sur cet appareil
         </label>
+        {discardPending && (
+          <div role="alertdialog" aria-labelledby="discard-offline-title" aria-describedby="discard-offline-description" className="rounded-xl border border-danger/30 p-4 space-y-3">
+            <p id="discard-offline-title" className="font-medium">Effacer les changements en attente de ce foyer ?</p>
+            <p id="discard-offline-description" className="text-sm">{discardPending.queue.length} changement(s) ne sont pas encore synchronisés. Les autres foyers sont conservés. Tu peux annuler et te reconnecter pour les synchroniser.</p>
+            <div className="flex flex-wrap gap-2">
+              <Button autoFocus type="button" variant="outline" disabled={disabling} onClick={() => setDiscardPending(null)}>Conserver les changements</Button>
+              <Button type="button" variant="danger" disabled={disabling} onClick={() => void disableOffline(discardPending.queue.map((m) => m.mutationId))}>Effacer pour ce foyer</Button>
+            </div>
+          </div>
+        )}
         {enabled && (
           <p className="text-xs text-muted-foreground" role="status">
             {cacheReady
@@ -424,11 +476,11 @@ export function ShoppingBoard({
                         queue: value.queue.map((m) =>
                           m.id === id
                             ? {
-                                ...m,
-                                conflict: undefined,
-                                mutationId: crypto.randomUUID(),
-                                revision: revision++,
-                              }
+                              ...m,
+                              conflict: undefined,
+                              mutationId: crypto.randomUUID(),
+                              revision: revision++,
+                            }
                             : m,
                         ),
                       };

@@ -7,7 +7,8 @@ export default defineConfig({
     contextOptions: { reducedMotion: "reduce" },
     baseURL: "http://localhost:3000",
     viewport: { width: 1440, height: 1000 },
-    launchOptions: {
+    browserName: process.env.LEHUB_BROWSER === "webkit" ? "webkit" : "chromium",
+    launchOptions: process.env.LEHUB_BROWSER === "webkit" ? {} : {
       executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
       args: ["--no-sandbox"],
     },

@@ -23,6 +23,7 @@ beforeAll(async () => {
     { id: "admin", name: "Alice", email: "alice@example.test" },
     { id: "member", name: "Bob", email: "bob@example.test" },
   ]);
+  await db.insert(s.session).values({ id: "member-session", userId: "member", token: "test-session", expiresAt: new Date(Date.now() + 86400000) });
   await db.insert(s.household).values({ id: home, name: "Maison" });
   await db.insert(s.membership).values([
     { householdId: home, userId: "admin", role: "admin" },
@@ -191,11 +192,11 @@ it("validates push endpoints against SSRF and scopes subscriptions to their memb
       endpoint: "https://fcm.googleapis.com:444/private",
     }).success,
   ).toBe(false);
-  await subscribePush(db, "member", home, subscription);
-  await subscribePush(db, "member", home, subscription);
+  await subscribePush(db, "member", home, subscription, "member-session");
+  await subscribePush(db, "member", home, subscription, "member-session");
   expect(await db.select().from(s.pushSubscription)).toHaveLength(1);
   await expect(
-    subscribePush(db, "outsider", home, subscription),
+    subscribePush(db, "outsider", home, subscription, "member-session"),
   ).rejects.toThrow();
   await unsubscribePush(db, "member", home, subscription.endpoint);
   expect(await db.select().from(s.pushSubscription)).toHaveLength(0);
@@ -211,6 +212,8 @@ it("validates push endpoints against SSRF and scopes subscriptions to their memb
 
 it("distributes push independently of an SMTP failure and deduplicates each channel", async () => {
   const { queueReminders, deliverReminder } = await import("@/lib/reminders");
+  await db.insert(s.session).values({ id: "admin-push-session", userId: "admin", token: "admin-push-session", expiresAt: new Date(Date.now() + 86400000) });
+  await db.insert(s.pushSubscription).values({ id: randomUUID(), householdId: home, userId: "admin", sessionId: "admin-push-session", endpoint: "https://fcm.googleapis.com/fcm/send/admin", p256dh: "test", auth: "test" });
   const target = randomUUID();
   await db
     .insert(s.maintenance)

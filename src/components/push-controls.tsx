@@ -14,7 +14,7 @@ export function PushControls({ scope }: { scope: string }) {
       const settings = await fetch("/api/push", { cache: "no-store" });
       if (!settings.ok) throw Error("Reconnecte-toi puis réessaie.");
       const config = await settings.json();
-      if (!config.key || config.scope !== scope)
+      if ((operation !== "disable" && !config.key) || config.scope !== scope)
         throw Error(
           "Actualise la page ou demande à l’administrateur de configurer les clés VAPID.",
         );

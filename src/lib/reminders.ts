@@ -9,6 +9,8 @@ import {
   equipment,
   reminderPreference,
   reminderDelivery,
+  pushSubscription,
+  session,
 } from "@/db/schema";
 import { today } from "./recurrence";
 import { sendPush } from "./push";
@@ -56,6 +58,7 @@ export async function queueReminders(database: Database, now = new Date()) {
           ),
         ),
     ]);
+    const [activeDevice] = pref.pushEnabled ? await database.select({ id: pushSubscription.id }).from(pushSubscription).innerJoin(session, and(eq(session.id, pushSubscription.sessionId), sql`${session.expiresAt} > ${now}`)).where(and(eq(pushSubscription.householdId, home.id), eq(pushSubscription.userId, pref.userId))).limit(1) : [];
     const targets = [
       ...tasks.map((t) => ({
         kind: "maintenance",
@@ -73,7 +76,7 @@ export async function queueReminders(database: Database, now = new Date()) {
     for (const target of targets)
       for (const channel of [
         ...(pref.emailEnabled ? ["email"] : []),
-        ...(pref.pushEnabled ? ["push"] : []),
+        ...(pref.pushEnabled && activeDevice ? ["push"] : []),
       ])
         await database
           .insert(reminderDelivery)
@@ -127,6 +130,7 @@ export async function deliverReminder(
             : eq(reminderPreference.emailEnabled, true),
         ),
       );
+    const [activeDevice] = delivery.channel === "push" ? await tx.select({ id: pushSubscription.id }).from(pushSubscription).innerJoin(session, and(eq(session.id, pushSubscription.sessionId), sql`${session.expiresAt} > now()`)).where(and(eq(pushSubscription.householdId, delivery.householdId), eq(pushSubscription.userId, delivery.userId))).limit(1) : [true];
     let title: string | undefined;
     if (delivery.kind === "maintenance") {
       const [task] = await tx
@@ -155,7 +159,7 @@ export async function deliverReminder(
         );
       title = device?.name;
     }
-    if (!recipient || !title) {
+    if (!recipient || !title || !activeDevice) {
       await tx
         .update(reminderDelivery)
         .set({ status: "cancelled" })
@@ -168,6 +172,7 @@ export async function deliverReminder(
           tx as unknown as Database,
           delivery.userId,
           delivery.householdId,
+          delivery.id,
         );
       else
         await send(

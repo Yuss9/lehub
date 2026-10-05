@@ -1,9 +1,9 @@
 import webpush from "web-push";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { and, eq, gt, sql } from "drizzle-orm";
+import { randomUUID, createHash } from "node:crypto";
 import type { db as productionDb } from "@/db";
-import { pushSubscription, reminderPreference, membership } from "@/db/schema";
+import { pushSubscription, reminderPreference, membership, session, pushReceipt } from "@/db/schema";
 import { requireMembership } from "./domain";
 type Database = typeof productionDb;
 export const pushConfigured = () =>
@@ -48,10 +48,18 @@ export async function subscribePush(
   actor: string,
   home: string,
   raw: unknown,
+  sessionId: string,
+  label = "Navigateur",
 ) {
   await requireMembership(database, actor, home);
   const data = subscriptionSchema.parse(raw);
   await database.transaction(async (tx) => {
+    const [activeSession] = await tx.select().from(session).where(and(eq(session.id, sessionId), eq(session.userId, actor), gt(session.expiresAt, new Date()))).for("share");
+    if (!activeSession) throw Error("Session expirée");
+    // Serialize ownership transfers for a browser endpoint across accounts.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${data.endpoint}))`);
+    await tx.delete(pushSubscription).where(and(eq(pushSubscription.endpoint, data.endpoint), sql`${pushSubscription.userId} <> ${actor}`));
+    await tx.update(pushSubscription).set({ sessionId, label: label.slice(0, 120) }).where(and(eq(pushSubscription.endpoint, data.endpoint), eq(pushSubscription.userId, actor)));
     const [member] = await tx
       .select()
       .from(membership)
@@ -64,6 +72,8 @@ export async function subscribePush(
       .insert(pushSubscription)
       .values({
         id: randomUUID(),
+        sessionId,
+        label: label.slice(0, 120),
         userId: actor,
         householdId: home,
         endpoint: data.endpoint,
@@ -75,7 +85,7 @@ export async function subscribePush(
           pushSubscription.userId,
           pushSubscription.endpoint,
         ],
-        set: data.keys,
+        set: { ...data.keys, sessionId, label: label.slice(0, 120) },
       });
     await tx
       .insert(reminderPreference)
@@ -90,52 +100,69 @@ export async function sendPush(
   database: Database,
   actor: string,
   home: string,
+  deliveryId?: string,
 ) {
-  if (!pushConfigured()) throw Error("Push non configuré");
-  const subscriptions = await database
-    .select()
-    .from(pushSubscription)
-    .where(
-      and(
-        eq(pushSubscription.userId, actor),
-        eq(pushSubscription.householdId, home),
-      ),
-    );
-  if (!subscriptions.length) throw Error("Aucun appareil inscrit");
-  let sent = 0;
-  for (const subscription of subscriptions) {
-    try {
-      await webpush.sendNotification(
-        {
-          endpoint: subscription.endpoint,
-          keys: { p256dh: subscription.p256dh, auth: subscription.auth },
-        },
-        JSON.stringify({
-          title: "lehub",
-          body: "Une échéance du foyer demande ton attention. Ouvre lehub pour la consulter.",
-          url: "/settings",
-        }),
-        {
-          vapidDetails: {
-            subject: process.env.VAPID_SUBJECT!,
-            publicKey: process.env.VAPID_PUBLIC_KEY!,
-            privateKey: process.env.VAPID_PRIVATE_KEY!,
+  const error = await database.transaction(async (tx) => {
+    if (!pushConfigured()) throw Error("Push non configuré");
+    const subscriptions = await tx
+      .select({ subscription: pushSubscription })
+      .from(pushSubscription)
+      .innerJoin(session, and(eq(session.id, pushSubscription.sessionId), gt(session.expiresAt, new Date())))
+      .where(
+        and(
+          eq(pushSubscription.userId, actor),
+          eq(pushSubscription.householdId, home),
+        ),
+      ).orderBy(pushSubscription.id).for("share", { of: [session, pushSubscription] });
+    if (!subscriptions.length) return "Aucun appareil inscrit";
+    let sent = 0;
+    let failed = false;
+    for (const { subscription } of subscriptions) {
+      const deviceKey = createHash("sha256").update(subscription.endpoint).digest("hex");
+      if (deliveryId) {
+        const [receipt] = await tx.select().from(pushReceipt).where(and(eq(pushReceipt.deliveryId, deliveryId), eq(pushReceipt.deviceKey, deviceKey)));
+        if (receipt?.status === "sent" || receipt?.status === "expired") { sent++; continue; }
+      }
+      let status = "sent", lastError = "";
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: subscription.endpoint,
+            keys: { p256dh: subscription.p256dh, auth: subscription.auth },
           },
-          TTL: 86400,
-          timeout: 10000,
-        },
-      );
-      sent++;
-    } catch (error) {
-      const status = (error as { statusCode?: number }).statusCode;
-      if (status === 404 || status === 410)
-        await database
-          .delete(pushSubscription)
-          .where(eq(pushSubscription.id, subscription.id));
-      // One expired device must not prevent delivery to another device.
+          JSON.stringify({
+            title: "lehub",
+            body: "Une échéance du foyer demande ton attention. Ouvre lehub pour la consulter.",
+            url: "/settings",
+          }),
+          {
+            vapidDetails: {
+              subject: process.env.VAPID_SUBJECT!,
+              publicKey: process.env.VAPID_PUBLIC_KEY!,
+              privateKey: process.env.VAPID_PRIVATE_KEY!,
+            },
+            TTL: 86400,
+            timeout: 10000,
+          },
+        );
+        sent++;
+      } catch (error) {
+        const code = (error as { statusCode?: number }).statusCode;
+        if (code === 404 || code === 410)
+          await tx
+            .delete(pushSubscription)
+            .where(eq(pushSubscription.id, subscription.id));
+        status = code === 404 || code === 410 ? "expired" : "failed";
+        if (status === "failed") { failed = true; lastError = "Envoi impossible sur cet appareil."; }
+        else sent++;
+      }
+      if (deliveryId) await tx.insert(pushReceipt).values({ deliveryId, deviceKey, status, attempts: 1, lastError }).onConflictDoUpdate({ target: [pushReceipt.deliveryId, pushReceipt.deviceKey], set: { status, lastError, attempts: sql`${pushReceipt.attempts} + 1`, updatedAt: new Date() } });
     }
-  }
-  if (!sent) throw Error("Aucune notification distribuée");
+    if (failed) return "Des appareils nécessitent une nouvelle tentative.";
+    if (!sent) return "Aucune notification distribuée";
+    return null;
+  });
+  if (error) throw Error(error);
 }
 
 export async function unsubscribePush(

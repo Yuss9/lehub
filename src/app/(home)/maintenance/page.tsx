@@ -12,12 +12,13 @@ import {
   dateLabel,
   Pagination,
 } from "@/components/home-ui";
+import { InterventionAudit } from "@/components/intervention-audit";
 import { InterventionEditor } from "@/components/intervention-editor";
 import { Select } from "@/components/home-ui";
 import { moneyLabel } from "@/lib/value-schemas";
 import { db } from "@/db";
-import { maintenance } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { maintenance, interventionCorrection } from "@/db/schema";
+import { and, eq, inArray, desc } from "drizzle-orm";
 import Link from "next/link";
 export default async function MaintenancePage({
   searchParams,
@@ -62,28 +63,29 @@ export default async function MaintenancePage({
       : undefined,
     query: params.q,
   });
+  const corrections = data.history.length ? await db.select().from(interventionCorrection).where(and(eq(interventionCorrection.householdId, household.id), inArray(interventionCorrection.interventionId, data.history.map((h) => h.id)))).orderBy(desc(interventionCorrection.correctedAt)).limit(1000) : [];
   const calendarTasks = historyView
     ? []
     : await db
+      .select()
+      .from(maintenance)
+      .where(
+        and(
+          eq(maintenance.householdId, household.id),
+          eq(maintenance.archived, false),
+        ),
+      );
+  const selected =
+    !historyView && params.task
+      ? await db
         .select()
         .from(maintenance)
         .where(
           and(
+            eq(maintenance.id, params.task),
             eq(maintenance.householdId, household.id),
-            eq(maintenance.archived, false),
           ),
-        );
-  const selected =
-    !historyView && params.task
-      ? await db
-          .select()
-          .from(maintenance)
-          .where(
-            and(
-              eq(maintenance.id, params.task),
-              eq(maintenance.householdId, household.id),
-            ),
-          )
+        )
       : [];
   const tasks = selected.length ? selected : data.tasks;
   const groups = [...new Set(tasks.map((t) => t.dueOn))];
@@ -282,6 +284,7 @@ export default async function MaintenancePage({
                   {moneyLabel(h.costCents, household.currency)}
                 </p>
                 <InterventionEditor entry={h} />
+                <InterventionAudit rows={corrections.filter((r) => r.interventionId === h.id)} timezone={household.timezone} currency={household.currency} />
                 {h.notes && (
                   <p className="mt-3 whitespace-pre-wrap text-sm">{h.notes}</p>
                 )}

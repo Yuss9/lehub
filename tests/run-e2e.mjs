@@ -37,6 +37,10 @@ try {
     HOSTNAME: "127.0.0.1",
     PORT: "3000",
     NODE_ENV: "production",
+    // Dummy configuration only: no worker sends notifications in this harness.
+    VAPID_PUBLIC_KEY: "mocked-local-public-key",
+    VAPID_PRIVATE_KEY: "mocked-local-private-key",
+    VAPID_SUBJECT: "mailto:test@example.test",
   };
   app = spawn(process.execPath, [".next/standalone/server.js"], {
     env,

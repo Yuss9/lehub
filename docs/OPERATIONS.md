@@ -73,7 +73,7 @@ docker compose -p lehub-validation -f compose.validation.yaml up --abort-on-cont
 docker compose -p lehub-validation -f compose.validation.yaml down
 ```
 
-Le validateur vérifie le démarrage de l’image production, sept courses de concurrence PostgreSQL avec deux connexions, les migrations, un bootstrap, la restauration ZIP avec original, un rappel distribué via SMTP, un cycle worker, la sauvegarde serveur chiffrée et sa restauration de contrôle. Toutes les bases utilisées sont aléatoires et supprimées ; PostgreSQL de validation utilise un tmpfs. Si une étape échoue, conserver les logs avant `down`. Cette commande est manuelle et ne constitue pas une CI.
+Le validateur vérifie le démarrage de l’image production, neuf scénarios de concurrence PostgreSQL avec deux connexions, les migrations, un bootstrap, la restauration ZIP avec original, un rappel distribué via SMTP, un cycle worker, la sauvegarde serveur chiffrée et sa restauration de contrôle. Toutes les bases utilisées sont aléatoires et supprimées ; PostgreSQL de validation utilise un tmpfs. Si une étape échoue, conserver les logs avant `down`. Cette commande est manuelle et ne constitue pas une CI.
 
 ### Résultats de ce lot
 
@@ -82,3 +82,7 @@ Le validateur vérifie le démarrage de l’image production, sept courses de co
 - PostgreSQL natif et Docker : **non exécutés dans l’environnement de développement de cette PR**, car les exécutables ne sont pas disponibles. Le harnais fourni doit encore être lancé sur une machine de test équipée. Les tests PGlite ne remplacent pas cette validation.
 - Restauration ZIP métier : testée localement ; restauration complète `pg_dump/pg_restore` et images Docker : en attente du harnais natif.
 - Push : validations, autorisations et persistance testées localement ; distribution externe réelle à vérifier avec des clés VAPID et un appareil volontaire.
+
+## Appareils et surveillance
+
+Le lot suivant ajoute les abonnements liés aux sessions, les reçus push par appareil, la trace des corrections, les lots OCR, la copie distante et les alertes. Appliquer la migration 0006 et suivre [RELIABILITY.md](RELIABILITY.md), notamment la réactivation des anciens abonnements push.

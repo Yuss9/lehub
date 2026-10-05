@@ -9,6 +9,14 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
+FROM dependencies AS monitor
+WORKDIR /app
+COPY src ./src
+COPY scripts ./scripts
+COPY tsconfig.json ./
+USER node
+CMD ["node", "--import", "tsx", "scripts/monitor.ts"]
+
 FROM dependencies AS migrate
 WORKDIR /app
 COPY drizzle ./drizzle
@@ -38,7 +46,7 @@ CMD ["node", "server.js"]
 
 FROM postgres:17-bookworm AS backup
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 ca-certificates && rm -rf /var/lib/apt/lists/* && groupadd --system --gid 1001 lehub && useradd --system --uid 1001 --gid lehub lehub && mkdir -p /app/data/backups && chown -R lehub:lehub /app/data
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 ca-certificates rclone && rm -rf /var/lib/apt/lists/* && groupadd --system --gid 1001 lehub && useradd --system --uid 1001 --gid lehub lehub && mkdir -p /app/data/backups && chown -R lehub:lehub /app/data
 COPY --from=dependencies /usr/local/bin/node /usr/local/bin/node
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --chown=lehub:lehub src ./src

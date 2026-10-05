@@ -34,6 +34,9 @@ services:
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set BETTER_AUTH_URL}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET}
       SETUP_KEY: ${SETUP_KEY:?Set SETUP_KEY}
+      OPERATIONS_HEALTH_TOKEN: ${OPERATIONS_HEALTH_TOKEN:-}
+      MONITOR_BACKUPS: ${MONITOR_BACKUPS:-false}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-}
       DOCUMENTS_DIR: /app/data/documents
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
@@ -73,6 +76,8 @@ services:
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set BETTER_AUTH_URL}
       DOCUMENTS_DIR: /app/data/documents
       OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_BATCH_SIZE: ${OCR_BATCH_SIZE:-10}
+      OCR_CONCURRENCY: ${OCR_CONCURRENCY:-2}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
@@ -99,11 +104,17 @@ services:
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set BETTER_AUTH_URL}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET}
       SETUP_KEY: ${SETUP_KEY:?Set SETUP_KEY}
+      OPERATIONS_HEALTH_TOKEN: ${OPERATIONS_HEALTH_TOKEN:-}
+      OPERATIONS_ALERT_URL: ${OPERATIONS_ALERT_URL:-}
+      OPERATIONS_ALERT_TOKEN: ${OPERATIONS_ALERT_TOKEN:-}
+      MONITOR_BACKUPS: ${MONITOR_BACKUPS:-false}
       DOCUMENTS_DIR: /app/data/documents
       SERVER_BACKUPS_DIR: /app/data/backups
       BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
       BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
       BACKUP_RETENTION: ${BACKUP_RETENTION:-7}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-}
+      RCLONE_CONFIG: /config/rclone.conf
       BACKUP_TEST_POSTGRES_URL: ${BACKUP_TEST_POSTGRES_URL:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -115,9 +126,29 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_BATCH_SIZE: ${OCR_BATCH_SIZE:-10}
+      OCR_CONCURRENCY: ${OCR_CONCURRENCY:-2}
     volumes:
       - documents:/app/data/documents:ro
       - server_backups:/app/data/backups
+      - ${BACKUP_CONFIG_DIR:-./backup-config}:/config:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  monitor:
+    build:
+      context: .
+      target: monitor
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    command: ["node", "--import", "tsx", "scripts/monitor.ts"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lehub}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lehub}
+      OPERATIONS_ALERT_URL: ${OPERATIONS_ALERT_URL:-}
+      OPERATIONS_ALERT_TOKEN: ${OPERATIONS_ALERT_TOKEN:-}
+      MONITOR_BACKUPS: ${MONITOR_BACKUPS:-false}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-}
     depends_on:
       db:
         condition: service_healthy

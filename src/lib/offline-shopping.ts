@@ -58,14 +58,21 @@ export async function updateShopping(
   scope: string,
   fallback: LocalShopping,
   change: (current: LocalShopping) => LocalShopping,
+  enable = false,
 ): Promise<LocalShopping> {
   const db = await database();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("cache", "readwrite");
     const store = tx.objectStore("cache");
     let next: LocalShopping;
+    const disabled = store.get(`${scope}:disabled`);
+    disabled.onsuccess = () => {
+      if (disabled.result && !enable) { tx.abort(); return; }
+      if (enable) store.delete(`${scope}:disabled`);
+    };
     const request = store.get(scope);
     request.onsuccess = () => {
+      if (disabled.result && !enable) return;
       const saved = request.result as LocalShopping | undefined;
       next = change(saved || fallback);
       store.put(next, scope);
@@ -101,7 +108,7 @@ export async function readShopping(
 }
 export async function writeShopping(value: LocalShopping) {
   // Used only for initial opt-in; preserve another tab's pending operations.
-  return updateShopping(value.state.scope, value, (current) => current);
+  return updateShopping(value.state.scope, value, (current) => current, true);
 }
 export async function migrateShopping() {
   const raw = localStorage.getItem(KEY);
@@ -121,6 +128,30 @@ export async function clearShopping() {
   });
   window.dispatchEvent(new Event("lehub-offline-cleared"));
   announce();
+}
+// Compare the pending IDs inside the deletion transaction: a new change from
+// another tab must be shown to the user before it can be discarded.
+export async function removeShopping(scope: string, confirmedIds: string[] = []): Promise<LocalShopping | null> {
+  const db = await database();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("cache", "readwrite");
+    const store = tx.objectStore("cache");
+    let pending: LocalShopping | null = null;
+    const request = store.get(scope);
+    request.onsuccess = () => {
+      const saved = request.result as LocalShopping | undefined;
+      if (saved?.queue.some((m) => !confirmedIds.includes(m.mutationId))) {
+        pending = saved;
+        return;
+      }
+      store.delete(scope);
+      store.put(true, `${scope}:disabled`);
+      const active = store.get("active");
+      active.onsuccess = () => { if (active.result === scope) store.delete("active"); };
+    };
+    tx.oncomplete = () => { if (!pending) announce(); resolve(pending); };
+    tx.onabort = tx.onerror = () => reject(tx.error || Error("Effacement impossible."));
+  });
 }
 export function watchShopping(refresh: () => void) {
   window.addEventListener(EVENT, refresh);

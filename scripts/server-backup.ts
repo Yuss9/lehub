@@ -3,6 +3,7 @@ import {
   verifyServerBackup,
   unpackServerBackup,
 } from "../src/lib/server-backup";
+import { replicateBackup } from "../src/lib/backup-replication";
 import { workerHeartbeat } from "../src/lib/operations";
 import { db, pool } from "../src/db";
 let stopped = false;
@@ -34,9 +35,13 @@ try {
     if (!Number.isFinite(hours) || hours < 1 || hours > 168)
       throw Error("Intervalle invalide (1–168 heures).");
     do {
-      await workerHeartbeat(db, "backup");
+      await workerHeartbeat(db, "backup", { intervalSeconds: hours * 3600 });
       try {
-        await createServerBackup();
+        const archive = await createServerBackup();
+        if (process.env.BACKUP_REMOTE) {
+          await replicateBackup(archive);
+          await workerHeartbeat(db, "backup-offsite", { intervalSeconds: hours * 3600, completedAt: new Date(), lastError: "" });
+        }
         await workerHeartbeat(db, "backup", {
           completedAt: new Date(),
           lastError: "",
@@ -45,10 +50,11 @@ try {
           "Sauvegarde chiffrée créée et restauration de contrôle réussie.",
         );
       } catch {
+        if (process.env.BACKUP_REMOTE) await workerHeartbeat(db, "backup-offsite", { intervalSeconds: hours * 3600, lastError: "Copie distante non vérifiée. Vérifie la destination et le fichier rclone." }).catch(() => { });
         await workerHeartbeat(db, "backup", {
           lastError:
-            "Sauvegarde ou restauration de contrôle échouée. Les archives précédentes sont conservées.",
-        }).catch(() => {});
+            "Sauvegarde ou restauration de contrôle échouée. Les archives locales précédentes sont conservées. Vérifie aussi la copie distante.",
+        }).catch(() => { });
         console.error(
           "Sauvegarde non validée. Vérifie les clients PostgreSQL, les droits CREATE DATABASE, les fichiers et la configuration.",
         );
