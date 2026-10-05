@@ -52,6 +52,8 @@ export async function replaceDocument(
         extractedText: "",
         ocrStatus: "pending",
         ocrStartedAt: null,
+        ocrFinishedAt: null,
+        ocrError: "",
         revision: sql`${document.revision} + 1`,
       })
       .where(

@@ -11,6 +11,7 @@ import {
   reminderDelivery,
 } from "@/db/schema";
 import { today } from "./recurrence";
+import { sendPush } from "./push";
 import { sendMail } from "./mail";
 type Database = typeof productionDb;
 export async function queueReminders(database: Database, now = new Date()) {
@@ -25,7 +26,9 @@ export async function queueReminders(database: Database, now = new Date()) {
         eq(membership.userId, reminderPreference.userId),
       ),
     )
-    .where(eq(reminderPreference.emailEnabled, true));
+    .where(
+      sql`${reminderPreference.emailEnabled} or ${reminderPreference.pushEnabled}`,
+    );
   for (const { pref, home } of prefs) {
     const date = today(home.timezone, now);
     const horizon = new Date(`${date}T00:00:00Z`);
@@ -68,18 +71,27 @@ export async function queueReminders(database: Database, now = new Date()) {
         })),
     ];
     for (const target of targets)
-      await database
-        .insert(reminderDelivery)
-        .values({
-          id: randomUUID(),
-          householdId: home.id,
-          userId: pref.userId,
-          ...target,
-        })
-        .onConflictDoNothing();
+      for (const channel of [
+        ...(pref.emailEnabled ? ["email"] : []),
+        ...(pref.pushEnabled ? ["push"] : []),
+      ])
+        await database
+          .insert(reminderDelivery)
+          .values({
+            id: randomUUID(),
+            householdId: home.id,
+            userId: pref.userId,
+            ...target,
+            channel,
+          })
+          .onConflictDoNothing();
   }
 }
-export async function deliverReminder(database: Database, send = sendMail) {
+export async function deliverReminder(
+  database: Database,
+  send = sendMail,
+  push = sendPush,
+) {
   return database.transaction(async (tx) => {
     const [delivery] = await tx
       .select()
@@ -110,7 +122,9 @@ export async function deliverReminder(database: Database, send = sendMail) {
         and(
           eq(membership.householdId, delivery.householdId),
           eq(membership.userId, delivery.userId),
-          eq(reminderPreference.emailEnabled, true),
+          delivery.channel === "push"
+            ? eq(reminderPreference.pushEnabled, true)
+            : eq(reminderPreference.emailEnabled, true),
         ),
       );
     let title: string | undefined;
@@ -149,15 +163,24 @@ export async function deliverReminder(database: Database, send = sendMail) {
       return true;
     }
     try {
-      await send(
-        recipient.email,
-        `lehub — ${delivery.kind === "maintenance" ? "entretien" : "garantie"} : ${title}`,
-        `${recipient.home.name}\n\n${title}\nÉchéance : ${delivery.dueOn}\n\n${new URL(delivery.kind === "maintenance" ? `/maintenance#${delivery.targetId}` : `/equipment/${delivery.targetId}`, process.env.BETTER_AUTH_URL || "http://localhost:3000")}\n\nTu peux désactiver ces rappels dans les paramètres de lehub.`,
-      );
+      if (delivery.channel === "push")
+        await push(
+          tx as unknown as Database,
+          delivery.userId,
+          delivery.householdId,
+        );
+      else
+        await send(
+          recipient.email,
+          `lehub — ${delivery.kind === "maintenance" ? "entretien" : "garantie"} : ${title}`,
+          `${recipient.home.name}\n\n${title}\nÉchéance : ${delivery.dueOn}\n\n${new URL(delivery.kind === "maintenance" ? `/maintenance#${delivery.targetId}` : `/equipment/${delivery.targetId}`, process.env.BETTER_AUTH_URL || "http://localhost:3000")}\n\nTu peux désactiver ces rappels dans les paramètres de lehub.`,
+        );
       await tx
         .update(reminderDelivery)
         .set({
           status: "sent",
+          lastError: "",
+          updatedAt: new Date(),
           sentAt: new Date(),
           attempts: delivery.attempts + 1,
         })
@@ -167,6 +190,11 @@ export async function deliverReminder(database: Database, send = sendMail) {
         .update(reminderDelivery)
         .set({
           status: "failed",
+          lastError:
+            delivery.channel === "push"
+              ? "Distribution push impossible. Vérifie les clés VAPID et les appareils inscrits."
+              : "Envoi SMTP impossible. Vérifie le relais, les identifiants et TLS.",
+          updatedAt: new Date(),
           attempts: delivery.attempts + 1,
           nextAttemptAt: new Date(
             Date.now() + Math.pow(2, delivery.attempts) * 60000,

@@ -9,6 +9,7 @@ import {
   count,
   lte,
   gte,
+  sql,
 } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -48,6 +49,8 @@ export async function homeData(
     month?: string;
     all?: boolean;
     equipmentId?: string;
+    year?: string;
+    outcome?: string;
   } = {},
 ) {
   const wanted = new Set(
@@ -106,6 +109,10 @@ export async function homeData(
     history: and(
       eq(intervention.householdId, householdId),
       search("history", intervention.notes, intervention.taskTitle),
+      options.year
+        ? ilike(intervention.completedOn, `${options.year}%`)
+        : undefined,
+      options.outcome ? eq(intervention.outcome, options.outcome) : undefined,
       options.equipmentId
         ? eq(maintenance.equipmentId, options.equipmentId)
         : undefined,
@@ -182,6 +189,7 @@ export async function homeData(
         ? db
             .select({
               id: intervention.id,
+              revision: intervention.revision,
               householdId: intervention.householdId,
               maintenanceId: intervention.maintenanceId,
               completedOn: intervention.completedOn,
@@ -389,4 +397,43 @@ export async function dashboardData(householdId: string, timezone: string) {
     upcoming,
     warranties,
   };
+}
+
+export async function spendingData(
+  householdId: string,
+  year?: string,
+  equipmentId?: string,
+) {
+  return db
+    .select({
+      equipmentId: maintenance.equipmentId,
+      name: equipment.name,
+      year: sql<string>`substring(${intervention.completedOn}, 1, 4)`,
+      total:
+        sql<number>`coalesce(sum(${intervention.costCents}),0)::bigint`.mapWith(
+          Number,
+        ),
+      entries: count(),
+    })
+    .from(intervention)
+    .innerJoin(maintenance, eq(maintenance.id, intervention.maintenanceId))
+    .leftJoin(equipment, eq(equipment.id, maintenance.equipmentId))
+    .where(
+      and(
+        eq(intervention.householdId, householdId),
+        eq(maintenance.householdId, householdId),
+        eq(intervention.outcome, "completed"),
+        year ? ilike(intervention.completedOn, `${year}%`) : undefined,
+        equipmentId ? eq(maintenance.equipmentId, equipmentId) : undefined,
+      ),
+    )
+    .groupBy(
+      maintenance.equipmentId,
+      equipment.name,
+      sql`substring(${intervention.completedOn}, 1, 4)`,
+    )
+    .orderBy(
+      sql`substring(${intervention.completedOn}, 1, 4) desc`,
+      asc(equipment.name),
+    );
 }

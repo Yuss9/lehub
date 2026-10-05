@@ -35,6 +35,9 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET}
       SETUP_KEY: ${SETUP_KEY:?Set SETUP_KEY}
       DOCUMENTS_DIR: /app/data/documents
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_FROM: ${SMTP_FROM:-}
@@ -70,6 +73,9 @@ services:
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set BETTER_AUTH_URL}
       DOCUMENTS_DIR: /app/data/documents
       OCR_ENABLED: ${OCR_ENABLED:-true}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_FROM: ${SMTP_FROM:-}
@@ -82,7 +88,42 @@ services:
       db:
         condition: service_healthy
 
+  backup:
+    build:
+      context: .
+      target: backup
+    restart: unless-stopped
+    profiles: ["backups"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lehub}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-lehub}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set BETTER_AUTH_URL}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET}
+      SETUP_KEY: ${SETUP_KEY:?Set SETUP_KEY}
+      DOCUMENTS_DIR: /app/data/documents
+      SERVER_BACKUPS_DIR: /app/data/backups
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_RETENTION: ${BACKUP_RETENTION:-7}
+      BACKUP_TEST_POSTGRES_URL: ${BACKUP_TEST_POSTGRES_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_ALLOW_PLAINTEXT: ${SMTP_ALLOW_PLAINTEXT:-false}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+    volumes:
+      - documents:/app/data/documents:ro
+      - server_backups:/app/data/backups
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   documents:
 
+  server_backups:

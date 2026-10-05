@@ -36,12 +36,14 @@ export function Select({
   value = "",
   options,
   required = false,
+  emptyLabel,
 }: {
   label: string;
   name: string;
   value?: string | null;
   options: { id: string; name: string }[];
   required?: boolean;
+  emptyLabel?: string;
 }) {
   return (
     <label className="block space-y-2 text-sm font-medium">
@@ -53,7 +55,9 @@ export function Select({
         required={required}
         className="min-h-11 w-full rounded-xl border bg-surface px-3 text-sm"
       >
-        <option value="">{required ? "Choisir…" : "Aucun"}</option>
+        <option value="">
+          {emptyLabel || (required ? "Choisir…" : "Aucun")}
+        </option>
         {options.map((option) => (
           <option key={option.id} value={option.id}>
             {option.name}

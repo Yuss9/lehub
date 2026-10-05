@@ -25,6 +25,7 @@ export type PendingShopping = {
   revision?: number;
   checked?: boolean;
   data?: Record<string, string>;
+  conflict?: string;
 };
 export type LocalShopping = {
   state: ShoppingState;
@@ -32,21 +33,112 @@ export type LocalShopping = {
   savedAt: string;
 };
 const KEY = "lehub-shopping-v1";
-// Explicit opt-in, one account per device. Never cache credentials, documents or private HTML.
-export function readShopping(): LocalShopping | null {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+const EVENT = "lehub-shopping-updated";
+let connection: Promise<IDBDatabase> | undefined;
+function database() {
+  return (connection ||= new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open("lehub-shopping", 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("cache");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  }));
 }
-export function writeShopping(value: LocalShopping) {
-  localStorage.setItem(KEY, JSON.stringify(value));
+function announce() {
+  window.dispatchEvent(new Event(EVENT));
+  const channel =
+    typeof BroadcastChannel !== "undefined"
+      ? new BroadcastChannel(EVENT)
+      : null;
+  channel?.postMessage("refresh");
+  channel?.close();
 }
-export function clearShopping() {
+// A read and its write happen in ONE IndexedDB transaction, serialized across tabs.
+// Callers submit operations, never a stale copy of the whole queue.
+export async function updateShopping(
+  scope: string,
+  fallback: LocalShopping,
+  change: (current: LocalShopping) => LocalShopping,
+): Promise<LocalShopping> {
+  const db = await database();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("cache", "readwrite");
+    const store = tx.objectStore("cache");
+    let next: LocalShopping;
+    const request = store.get(scope);
+    request.onsuccess = () => {
+      const saved = request.result as LocalShopping | undefined;
+      next = change(saved || fallback);
+      store.put(next, scope);
+      store.put(scope, "active");
+    };
+    tx.oncomplete = () => {
+      announce();
+      resolve(next);
+    };
+    tx.onabort = tx.onerror = () =>
+      reject(tx.error || Error("Le foyer actif a changé."));
+  });
+}
+export async function readShopping(
+  scope?: string,
+): Promise<LocalShopping | null> {
+  const db = await database();
+  return new Promise((resolve, reject) => {
+    const store = db.transaction("cache").objectStore("cache");
+    function read(key: string) {
+      const request = store.get(key);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    }
+    if (scope) read(scope);
+    else {
+      const request = store.get("active");
+      request.onsuccess = () =>
+        request.result ? read(request.result) : resolve(null);
+      request.onerror = () => reject(request.error);
+    }
+  });
+}
+export async function writeShopping(value: LocalShopping) {
+  // Used only for initial opt-in; preserve another tab's pending operations.
+  return updateShopping(value.state.scope, value, (current) => current);
+}
+export async function migrateShopping() {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return;
+  const old = JSON.parse(raw) as LocalShopping;
+  await writeShopping(old);
   localStorage.removeItem(KEY);
+}
+export async function clearShopping() {
+  localStorage.removeItem(KEY);
+  const db = await database();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("cache", "readwrite");
+    tx.objectStore("cache").clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
   window.dispatchEvent(new Event("lehub-offline-cleared"));
+  announce();
+}
+export function watchShopping(refresh: () => void) {
+  window.addEventListener(EVENT, refresh);
+  const channel =
+    typeof BroadcastChannel !== "undefined"
+      ? new BroadcastChannel(EVENT)
+      : null;
+  if (channel) channel.onmessage = refresh;
+  return () => {
+    window.removeEventListener(EVENT, refresh);
+    channel?.close();
+  };
+}
+export function discardArticle(
+  value: LocalShopping,
+  id: string,
+): LocalShopping {
+  return { ...value, queue: value.queue.filter((m) => m.id !== id) };
 }
 export function projectShopping(
   state: ShoppingState,

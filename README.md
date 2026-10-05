@@ -23,17 +23,17 @@ chmod 600 .env
 
 Générer trois valeurs **différentes** avec `openssl rand -hex 32`, puis renseigner :
 
-| Variable | Utilisation |
-| --- | --- |
-| `POSTGRES_PASSWORD` | Mot de passe de la base ; utiliser la valeur hexadécimale générée pour éviter les caractères réservés d’une URL. |
-| `BETTER_AUTH_SECRET` | Secret aléatoire de signature des sessions, minimum 32 caractères. |
-| `SETUP_KEY` | Clé aléatoire demandée pour créer le premier administrateur. |
-| `BETTER_AUTH_URL` | URL publique exacte, sans chemin : `https://lehub.example.com`, ou `http://localhost:3000` pour usage local. |
-| `DATABASE_URL` | Pour les commandes locales uniquement. Compose la construit avec les variables PostgreSQL. |
-| `POSTGRES_USER`, `POSTGRES_DB` | `lehub` par défaut. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `SMTP_USER`, `SMTP_PASSWORD` | Envoi des rappels et liens de récupération, optionnel. TLS requis par défaut. |
-| `OCR_ENABLED` | `true` par défaut ; `false` désactive l’extraction de texte. |
-| `DOCUMENTS_DIR` | Emplacement des documents et photos privés, `/app/data/documents` dans Docker. |
+| Variable                                                            | Utilisation                                                                                                      |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `POSTGRES_PASSWORD`                                                 | Mot de passe de la base ; utiliser la valeur hexadécimale générée pour éviter les caractères réservés d’une URL. |
+| `BETTER_AUTH_SECRET`                                                | Secret aléatoire de signature des sessions, minimum 32 caractères.                                               |
+| `SETUP_KEY`                                                         | Clé aléatoire demandée pour créer le premier administrateur.                                                     |
+| `BETTER_AUTH_URL`                                                   | URL publique exacte, sans chemin : `https://lehub.example.com`, ou `http://localhost:3000` pour usage local.     |
+| `DATABASE_URL`                                                      | Pour les commandes locales uniquement. Compose la construit avec les variables PostgreSQL.                       |
+| `POSTGRES_USER`, `POSTGRES_DB`                                      | `lehub` par défaut.                                                                                              |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `SMTP_USER`, `SMTP_PASSWORD` | Envoi des rappels et liens de récupération, optionnel. TLS requis par défaut.                                    |
+| `OCR_ENABLED`                                                       | `true` par défaut ; `false` désactive l’extraction de texte.                                                     |
+| `DOCUMENTS_DIR`                                                     | Emplacement des documents et photos privés, `/app/data/documents` dans Docker.                                   |
 
 Ne pas ajouter le fichier `.env` au dépôt.
 
@@ -73,6 +73,8 @@ Après validation et fusion manuelle de la PR :
 6. `docker compose up -d app worker`, puis vérifier `/api/health` et se connecter.
 
 En cas d’échec de migration, laisser l’app arrêtée et examiner l’erreur. Ne pas rétrograder le code sur un schéma incompatible ; restaurer ensemble la base et les fichiers si nécessaire.
+
+Les sauvegardes serveur régulières, diagnostics, notifications push et tests natifs sont décrits dans [OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Comptes et foyer
 
@@ -148,7 +150,7 @@ docker compose -p lehub-restore --profile tools run --rm migrate
 docker compose -p lehub-restore up -d app
 ```
 
-Construire les images dans ce checkout si nécessaire avant la restauration. Vérifier la connexion, les membres et les paramètres avant de considérer la restauration terminée. Garder les anciens volumes jusqu’à validation. La configuration du reverse proxy doit pointer vers cette instance. La sauvegarde ZIP accessible depuis l’aperçu et Paramètres contient les données métier et les originaux, et peut être restaurée dans l’app par un administrateur. `pg_dump` + volume + configuration reste la sauvegarde intégrale incluant les comptes. Voir les [limites et instructions](docs/HOME-MODULES.md).
+Construire les images dans ce checkout si nécessaire avant la restauration. Vérifier la connexion, les membres et les paramètres avant de considérer la restauration terminée. Garder les anciens volumes jusqu’à validation. La configuration du reverse proxy doit pointer vers cette instance. La sauvegarde ZIP accessible depuis l’aperçu et Paramètres contient les données métier et les originaux, et peut être restaurée dans l’app par un administrateur. `pg_dump` + volume + configuration reste la sauvegarde intégrale incluant les comptes. Voir les [limites et instructions](docs/HOME-MODULES.md) et les [sauvegardes serveur chiffrées avec restauration de contrôle](docs/OPERATIONS.md).
 
 ## Contributions
 
@@ -159,4 +161,3 @@ Lire [AGENTS.md](AGENTS.md). Une branche dédiée et une PR vers `main` par lot,
 Après `npm run build`, installer Chromium avec `npx playwright install chromium`, puis lancer `npm run test:e2e`. Les ports locaux 3000 et 54329 doivent être libres. Le script démarre le serveur **standalone de production** et une base PGlite éphémère dédiée, applique les migrations, teste les parcours et arrête les processus. Il ne réutilise pas la base de `.env`. Les identifiants `example.test` présents dans les tests sont fictifs et n’existent jamais dans l’installation normale.
 
 Pour utiliser un navigateur déjà installé : `CHROMIUM_EXECUTABLE_PATH=/chemin/vers/chromium npm run test:e2e`. Les captures sont enregistrées dans `docs/screenshots/` avec les animations suspendues.
-

@@ -23,7 +23,7 @@ export function SignOut() {
           try {
             const result = await authClient.signOut();
             if (result.error) throw Error();
-            clearShopping();
+            await clearShopping();
             router.push("/login");
             router.refresh();
           } catch {

@@ -13,6 +13,8 @@ import {
   changeEntity,
 } from "../src/lib/home-domain";
 import { applyShoppingMutation } from "../src/lib/shopping-domain";
+import { manageMember } from "../src/lib/domain";
+import { correctIntervention } from "../src/lib/operations";
 import { today } from "../src/lib/recurrence";
 const source = process.env.TEST_POSTGRES_URL;
 if (!source)
@@ -56,16 +58,14 @@ try {
     recurrenceMode: "fixed",
     revision: 0,
   };
-  await da
-    .insert(schema.maintenance)
-    .values({
-      id: task,
-      householdId: home,
-      title: "Filtre",
-      dueOn: date,
-      frequency: "monthly",
-      anchorDay: Number(date.slice(8)),
-    });
+  await da.insert(schema.maintenance).values({
+    id: task,
+    householdId: home,
+    title: "Filtre",
+    dueOn: date,
+    frequency: "monthly",
+    anchorDay: Number(date.slice(8)),
+  });
   const edits = await Promise.allSettled([
     saveEntity(da, "a", home, "maintenance", task, {
       ...planning,
@@ -137,8 +137,40 @@ try {
     }),
   ]);
   assert.equal(stale.filter((r) => r.status === "fulfilled").length, 1);
+  const [history] = await da.select().from(schema.intervention);
+  const correction = {
+    revision: history.revision,
+    completedOn: history.completedOn,
+    scheduledOn: history.scheduledOn,
+    notes: "Corrigée",
+    cost: "15",
+    outcome: "completed",
+  };
+  const historyEdits = await Promise.allSettled([
+    correctIntervention(da, "a", home, history.id, correction, "UTC"),
+    correctIntervention(db, "b", home, history.id, correction, "UTC"),
+  ]);
+  assert.equal(historyEdits.filter((r) => r.status === "fulfilled").length, 1);
+  await da
+    .update(schema.membership)
+    .set({ role: "admin" })
+    .where(eq(schema.membership.householdId, home));
+  const roles = await Promise.allSettled([
+    manageMember(da, "a", home, "a", "member"),
+    manageMember(db, "b", home, "b", "member"),
+  ]);
+  assert.equal(roles.filter((r) => r.status === "fulfilled").length, 1);
+  assert.equal(
+    (
+      await da
+        .select()
+        .from(schema.membership)
+        .where(eq(schema.membership.householdId, home))
+    ).filter((m) => m.role === "admin").length,
+    1,
+  );
   console.log(
-    "PostgreSQL réel : 5 scénarios de concurrence validés, deux connexions et deux membres.",
+    "PostgreSQL réel : 7 scénarios de concurrence validés, deux connexions et deux membres.",
   );
 } finally {
   await Promise.all(pools.map((p) => p.end()));

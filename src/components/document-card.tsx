@@ -44,6 +44,22 @@ export function DocumentCard({
           className="mt-5 max-h-48 rounded-xl object-cover"
         />
       )}
+      {file.mime === "application/pdf" && (
+        <details className="mt-4">
+          <summary className="min-h-11 cursor-pointer py-3 text-sm text-primary">
+            Lire le PDF
+          </summary>
+          <iframe
+            title={`Aperçu de ${file.title}`}
+            loading="lazy"
+            className="h-[65vh] w-full rounded-xl border"
+            src={`/api/documents/${file.id}?preview=1&v=${file.revision}`}
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Si ton navigateur ne propose pas d’aperçu, utilise Télécharger.
+          </p>
+        </details>
+      )}
       <Link
         className="my-4 inline-flex min-h-11 items-center text-sm text-primary"
         href={`/api/documents/${file.id}`}
@@ -110,26 +126,51 @@ export function DocumentCard({
       <details className="mt-4 text-xs text-muted-foreground">
         <summary className="min-h-11 cursor-pointer py-3">
           Texte reconnu ·{" "}
-          {file.ocrStatus === "done"
-            ? "Terminé"
-            : file.ocrStatus === "error"
-              ? "À relancer"
-              : "En attente"}
+          {{
+            done: "Terminé",
+            manual: "Corrigé",
+            error: "En échec",
+            processing: "Traitement en cours",
+            pending: "En attente",
+          }[file.ocrStatus] || file.ocrStatus}
         </summary>
+        {file.ocrStartedAt && (
+          <p>Commencé le {file.ocrStartedAt.toLocaleString("fr-FR")}</p>
+        )}
+        {file.ocrFinishedAt && (
+          <p>Terminé le {file.ocrFinishedAt.toLocaleString("fr-FR")}</p>
+        )}
+        {file.ocrError && <p role="alert">{file.ocrError}</p>}
         {file.extractedText && (
           <p className="max-h-48 overflow-y-auto whitespace-pre-wrap leading-6">
             {file.extractedText}
           </p>
         )}
-        {file.ocrStatus === "error" && (
-          <Action
-            entity="document"
-            id={file.id}
-            revision={file.revision}
-            operation="ocr"
-            label="Relancer la reconnaissance"
-          />
-        )}
+        <Action
+          entity="document"
+          id={file.id}
+          revision={file.revision}
+          operation="text"
+          label="Enregistrer le texte corrigé"
+        >
+          <label className="block text-sm">
+            Texte reconnu
+            <textarea
+              name="extractedText"
+              defaultValue={file.extractedText}
+              maxLength={200000}
+              rows={6}
+              className="mt-2 w-full rounded-xl border bg-surface p-3"
+            />
+          </label>
+        </Action>
+        <Action
+          entity="document"
+          id={file.id}
+          revision={file.revision}
+          operation="ocr"
+          label="Relancer la reconnaissance"
+        />
       </details>
     </article>
   );

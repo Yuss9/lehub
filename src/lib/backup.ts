@@ -2,7 +2,7 @@ import AdmZip from "adm-zip";
 import { inflateRawSync } from "node:zlib";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { db as productionDb } from "@/db";
 import {
@@ -57,7 +57,7 @@ const rows = {
     maintenanceId: id,
     completedOn: dateSchema,
     scheduledOn: dateSchema,
-    outcome: z.enum(["completed", "skipped"]),
+    outcome: z.enum(["completed", "skipped", "cancelled"]),
     costCents: cents,
     taskTitle: z.string().max(120),
     notes: z.string().max(4000),
@@ -389,7 +389,7 @@ export async function importBackup(
           await tx.delete(table).where(eq(table.householdId, householdId));
         await tx
           .update(household)
-          .set(data.household)
+          .set({ ...data.household, revision: sql`${household.revision} + 1` })
           .where(eq(household.id, householdId));
         if (data.rooms.length)
           await chunks(

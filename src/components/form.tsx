@@ -2,6 +2,7 @@
 import { useActionState, useId, useState } from "react";
 import { LoaderCircle, Copy, Check } from "lucide-react";
 import type { ActionState } from "@/app/actions";
+import { HouseholdInput } from "./household-scope";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -56,6 +57,7 @@ export function MutationForm({
       }}
       className={compact ? "space-y-2" : "space-y-5"}
     >
+      <HouseholdInput />
       {children}
       <div aria-live="polite" aria-atomic="true">
         {state.error && (

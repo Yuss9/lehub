@@ -41,6 +41,18 @@ export async function exerciseHome(page: Page, browser: Browser) {
   expect(fileResponse.status()).toBe(200);
   expect(fileResponse.headers()["content-type"]).toBe("application/pdf");
   expect(fileResponse.headers()["cache-control"]).toContain("no-store");
+  const inline = await page.request.get(`${downloadUrl}?preview=1`);
+  expect(inline.headers()["content-disposition"]).toContain("inline");
+  await page.getByText("Texte reconnu ·", { exact: false }).click();
+  await page
+    .getByLabel("Texte reconnu", { exact: true })
+    .fill("Notice corrigée par un membre");
+  await page
+    .getByRole("button", { name: "Enregistrer le texte corrigé" })
+    .click();
+  await expect(
+    page.getByText("Notice corrigée par un membre", { exact: true }).first(),
+  ).toBeVisible();
   const anonymous = await browser.newContext();
   expect(
     (
@@ -88,8 +100,23 @@ export async function exerciseHome(page: Page, browser: Browser) {
     .fill("Filtre nettoyé");
   await page.getByRole("button", { name: "Confirmer la réalisation" }).click();
   await expect(page.getByText("Filtre nettoyé", { exact: true })).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
-    path: "docs/screenshots/workflows-maintenance-desktop.png",
+    path: "docs/screenshots/operations-maintenance-desktop.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.goto("/maintenance?view=history");
+  await expect(
+    page.getByRole("heading", { name: "Dépenses d’entretien" }),
+  ).toBeVisible();
+  await page.getByText("Corriger l’intervention", { exact: true }).click();
+  await page.getByLabel("Coût", { exact: true }).fill("25,50");
+  await page.getByRole("button", { name: "Enregistrer la correction" }).click();
+  await expect(page.getByText("Total : 25,50", { exact: false })).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({
+    path: "docs/screenshots/operations-spending.png",
     fullPage: true,
     animations: "disabled",
   });
@@ -129,6 +156,9 @@ export async function exerciseHome(page: Page, browser: Browser) {
   await expect(
     shared.getByRole("checkbox", { name: "Décocher Pastilles" }),
   ).toBeVisible();
+  await expect(
+    shared.getByText("Courses à jour", { exact: false }),
+  ).toBeVisible();
   await page.reload();
   await expect(
     page.getByRole("checkbox", { name: "Décocher Pastilles" }),
@@ -137,6 +167,9 @@ export async function exerciseHome(page: Page, browser: Browser) {
   await page
     .getByLabel("Conserver mes courses hors ligne sur cet appareil")
     .check();
+  await expect(
+    page.getByText("Courses conservées sur cet appareil.", { exact: true }),
+  ).toBeVisible();
   await page.goto("/offline");
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
@@ -152,6 +185,9 @@ export async function exerciseHome(page: Page, browser: Browser) {
   await page
     .getByRole("button", { name: "Ajouter à la liste", exact: true })
     .click();
+  await expect(
+    page.getByText("1 × Pain hors ligne", { exact: true }),
+  ).toBeVisible();
   await page.reload();
   await expect(
     page.getByText("1 × Pain hors ligne", { exact: true }),
@@ -198,9 +234,79 @@ export async function exerciseHome(page: Page, browser: Browser) {
     timeout: 20000,
   });
 
+  // Two pages in the SAME browser context share IndexedDB; both submit offline.
+  const secondTab = await page.context().newPage();
+  await secondTab.goto("/offline");
+  await expect(
+    secondTab.getByText("2 × Pain hors ligne", { exact: true }),
+  ).toBeVisible();
+  await page.context().setOffline(true);
+  await Promise.all(
+    [page, secondTab].map(async (tab, index) => {
+      await tab
+        .getByLabel("Article", { exact: true })
+        .fill(`Onglet ${index + 1}`);
+      await tab
+        .getByRole("button", { name: "Ajouter à la liste", exact: true })
+        .click();
+      await expect(
+        tab.getByText(`1 × Onglet ${index + 1}`, { exact: true }),
+      ).toBeVisible();
+    }),
+  );
+  await page.reload();
+  await expect(page.getByText("1 × Onglet 1", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 × Onglet 2", { exact: true })).toBeVisible();
+  await secondTab.close();
+  // Queue one conflicting edit followed by an unrelated addition.
+  await page
+    .getByRole("button", { name: "Modifier Pain hors ligne", exact: true })
+    .click();
+  await page.getByLabel("Quantité de l’article").fill("3");
+  await page
+    .getByRole("button", { name: "Enregistrer l’article", exact: true })
+    .click();
+  await page.getByLabel("Article", { exact: true }).fill("Article indépendant");
+  await page
+    .getByRole("button", { name: "Ajouter à la liste", exact: true })
+    .click();
+  await shared.reload();
+  await shared
+    .getByRole("button", { name: "Modifier Pain hors ligne", exact: true })
+    .click();
+  await shared.getByLabel("Quantité de l’article").fill("4");
+  await shared
+    .getByRole("button", { name: "Enregistrer l’article", exact: true })
+    .click();
+  await expect(
+    shared.getByText("Courses à jour", { exact: false }),
+  ).toBeVisible();
+  await page.context().setOffline(false);
+  await expect(
+    page.getByRole("button", {
+      name: "Abandonner les changements de cet article",
+    }),
+  ).toBeVisible({ timeout: 20000 });
+  await shared.reload();
+  await expect(
+    shared.getByText("1 × Article indépendant", { exact: true }),
+  ).toBeVisible();
+  await expect(shared.getByText("1 × Onglet 1", { exact: true })).toBeVisible();
+  await expect(shared.getByText("1 × Onglet 2", { exact: true })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Abandonner les changements de cet article" })
+    .click();
+  await expect(
+    page.getByText("Courses à jour", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("4 × Pain hors ligne", { exact: true }),
+  ).toBeVisible();
+
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
-    path: "docs/screenshots/workflows-shopping-mobile.png",
+    path: "docs/screenshots/operations-shopping-mobile.png",
     fullPage: true,
     animations: "disabled",
   });
@@ -229,26 +335,30 @@ export async function exerciseHome(page: Page, browser: Browser) {
   await expect(
     page.getByRole("link", { name: /Lave-vaisselle/ }),
   ).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
-    path: "docs/screenshots/workflows-home-modules-mobile.png",
+    path: "docs/screenshots/operations-home-modules-mobile.png",
     fullPage: true,
     animations: "disabled",
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
-    path: "docs/screenshots/workflows-home-modules-desktop.png",
+    path: "docs/screenshots/operations-home-modules-desktop.png",
     fullPage: true,
     animations: "disabled",
   });
   await page.getByRole("button", { name: "Thème sombre", exact: true }).click();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
-    path: "docs/screenshots/workflows-home-modules-dark.png",
+    path: "docs/screenshots/operations-home-modules-dark.png",
     fullPage: true,
     animations: "disabled",
   });
   await page.goto("/equipment");
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
-    path: "docs/screenshots/workflows-equipment-desktop.png",
+    path: "docs/screenshots/operations-equipment-desktop.png",
     fullPage: true,
     animations: "disabled",
   });
@@ -256,8 +366,9 @@ export async function exerciseHome(page: Page, browser: Browser) {
   await expect(
     page.getByRole("heading", { name: "Photos et documents", exact: true }),
   ).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
-    path: "docs/screenshots/workflows-equipment-detail.png",
+    path: "docs/screenshots/operations-equipment-detail.png",
     fullPage: true,
     animations: "disabled",
   });
@@ -280,11 +391,53 @@ export async function exerciseHome(page: Page, browser: Browser) {
   });
   expect(preview.status()).toBe(200);
   expect((await preview.json()).preview.documents).toBe(2);
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
-    path: "docs/screenshots/workflows-settings.png",
+    path: "docs/screenshots/operations-settings.png",
     fullPage: true,
     animations: "disabled",
   });
+  await page.getByText("Créer un autre foyer", { exact: true }).click();
+  await page.getByLabel("Nom du nouveau foyer").fill("Maison secondaire");
+  await page
+    .getByRole("button", { name: "Créer le foyer", exact: true })
+    .click();
+  await expect(
+    page.getByText("Foyer créé. Tu peux maintenant le sélectionner."),
+  ).toBeVisible();
+  const oldForm = await page.context().newPage();
+  await oldForm.goto("/rooms");
+  await page
+    .getByLabel("Foyer actif", { exact: true })
+    .selectOption({ label: "Maison secondaire" });
+  await page
+    .getByRole("button", { name: "Changer de foyer", exact: true })
+    .click();
+  await expect(
+    page.getByText("Foyer sélectionné.", { exact: false }),
+  ).toBeVisible();
+  expect((await page.request.get(downloadUrl)).status()).toBe(404);
+  await oldForm.getByText("Créer une pièce", { exact: true }).click();
+  await oldForm
+    .getByLabel("Nom", { exact: true })
+    .first()
+    .fill("Ancien formulaire");
+  await oldForm
+    .getByRole("button", { name: "Créer la pièce", exact: true })
+    .click();
+  await expect(
+    oldForm.getByText("Le foyer actif a changé.", { exact: false }),
+  ).toBeVisible();
+  await oldForm.close();
+  await page
+    .getByLabel("Foyer actif", { exact: true })
+    .selectOption({ index: 0 });
+  await page
+    .getByRole("button", { name: "Changer de foyer", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Retirer", exact: true }),
+  ).toBeVisible();
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Retirer", exact: true }).click();
   await expect(

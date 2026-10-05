@@ -55,3 +55,24 @@ self.addEventListener("fetch", (event) => {
   }
   // Authenticated HTML, APIs and files are always network-only.
 });
+self.addEventListener("push", (event) => {
+  let data;
+  try {
+    data = event.data.json();
+  } catch {
+    return;
+  }
+  event.waitUntil(
+    self.registration.showNotification("lehub", {
+      body: data.body || "Une échéance demande ton attention.",
+      icon: "/icon-192.png",
+      data: { url: "/settings" },
+    }),
+  );
+});
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.openWindow(new URL("/settings", self.location.origin).href),
+  );
+});

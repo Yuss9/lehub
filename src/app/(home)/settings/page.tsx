@@ -1,6 +1,16 @@
-import { and, eq, isNull, gt, desc } from "drizzle-orm";
+import { and, eq, isNull, gt, desc, asc } from "drizzle-orm";
 import { db } from "@/db";
-import { invitation, membership, user, reminderPreference } from "@/db/schema";
+import {
+  invitation,
+  membership,
+  user,
+  reminderPreference,
+  household,
+  workerState,
+  reminderDelivery,
+} from "@/db/schema";
+import { PushControls } from "@/components/push-controls";
+import { operationsAction } from "@/app/operations-actions";
 import { getContext } from "@/lib/context";
 import { Field, MutationForm } from "@/components/form";
 import { PasswordForm } from "@/components/account-controls";
@@ -11,6 +21,9 @@ import { mailConfigured } from "@/lib/mail";
 import { ThemeControl } from "@/components/providers";
 import {
   householdAction,
+  householdSelectAction,
+  householdCreateAction,
+  memberRoleAction,
   inviteAction,
   removeAction,
   revokeAction,
@@ -51,6 +64,30 @@ export default async function SettingsPage() {
         )
         .orderBy(desc(invitation.createdAt))
     : [];
+  const homes = await db
+    .select({ id: household.id, name: household.name })
+    .from(membership)
+    .innerJoin(household, eq(household.id, membership.householdId))
+    .where(eq(membership.userId, context.user.id))
+    .orderBy(asc(membership.createdAt), asc(household.id));
+  const workers = isAdmin ? await db.select().from(workerState) : [];
+  const deliveries = isAdmin
+    ? await db
+        .select({
+          id: reminderDelivery.id,
+          kind: reminderDelivery.kind,
+          channel: reminderDelivery.channel,
+          status: reminderDelivery.status,
+          attempts: reminderDelivery.attempts,
+          dueOn: reminderDelivery.dueOn,
+          lastError: reminderDelivery.lastError,
+          updatedAt: reminderDelivery.updatedAt,
+        })
+        .from(reminderDelivery)
+        .where(eq(reminderDelivery.householdId, context.household.id))
+        .orderBy(desc(reminderDelivery.updatedAt))
+        .limit(30)
+    : [];
   return (
     <>
       <p className="eyebrow">COMME TU L’AIMES</p>
@@ -60,6 +97,64 @@ export default async function SettingsPage() {
       </p>
       <div className="mt-9 grid items-start gap-6 xl:grid-cols-2">
         <div className="space-y-6">
+          <section className="panel space-y-4">
+            <h2 className="text-lg font-semibold">Mes foyers</h2>
+            <MutationForm
+              action={householdSelectAction}
+              label="Changer de foyer"
+            >
+              <label className="block text-sm">
+                Foyer actif
+                <select
+                  name="householdId"
+                  aria-label="Foyer actif"
+                  defaultValue={context.household.id}
+                  className="mt-2 min-h-11 w-full rounded-xl border bg-surface px-3"
+                >
+                  {homes.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Synchronise les courses en attente avant de changer de foyer.
+                Les formulaires ouverts dans les autres onglets devront être
+                actualisés.
+              </p>
+            </MutationForm>
+            <details>
+              <summary className="min-h-11 cursor-pointer py-3 text-sm text-primary">
+                Créer un autre foyer
+              </summary>
+              <MutationForm
+                action={householdCreateAction}
+                label="Créer le foyer"
+              >
+                <Field
+                  label="Nom du nouveau foyer"
+                  name="name"
+                  required
+                  maxLength={80}
+                />
+                <Field
+                  label="Devise du nouveau foyer"
+                  name="currency"
+                  defaultValue="EUR"
+                  required
+                  maxLength={3}
+                />
+                <Field
+                  label="Fuseau du nouveau foyer"
+                  name="timezone"
+                  defaultValue="Europe/Paris"
+                  required
+                  maxLength={100}
+                />
+              </MutationForm>
+            </details>
+          </section>
           <section className="panel">
             <h2 className="mb-1 text-lg font-semibold">Le foyer</h2>
             <p className="mb-6 text-xs leading-6 text-muted-foreground">
@@ -69,6 +164,11 @@ export default async function SettingsPage() {
             </p>
             {isAdmin ? (
               <MutationForm action={householdAction} label="Enregistrer">
+                <input
+                  type="hidden"
+                  name="revision"
+                  value={context.household.revision}
+                />
                 <Field
                   label="Nom du foyer"
                   name="name"
@@ -152,6 +252,9 @@ export default async function SettingsPage() {
           <section className="panel">
             <h2 className="mb-4 text-lg font-semibold">Sur mon téléphone</h2>
             <InstallApp />
+            <div className="mt-6">
+              <PushControls scope={context.household.id} />
+            </div>
           </section>
           <section className="panel">
             <h2 className="mb-4 text-lg font-semibold">
@@ -159,6 +262,90 @@ export default async function SettingsPage() {
             </h2>
             <BackupControls admin={isAdmin} />
           </section>
+          {isAdmin && (
+            <section className="panel space-y-4">
+              <h2 className="text-lg font-semibold">Worker et distribution</h2>
+              {!workers.length && (
+                <p className="text-sm text-danger">
+                  Aucun worker observé. Démarre le service worker.
+                </p>
+              )}
+              {workers.map((w) => (
+                <div key={w.id} className="rounded-xl border p-3 text-sm">
+                  <p>
+                    {w.id} ·{" "}
+                    {new Date().getTime() - w.heartbeatAt.getTime() <
+                    (w.id === "backup" ? 48 * 3600000 : 120000)
+                      ? "Actif"
+                      : "Sans signal récent"}
+                  </p>
+                  <p className="mt-2 text-xs">
+                    Dernier signal :{" "}
+                    {w.heartbeatAt.toLocaleString("fr-FR", {
+                      timeZone: context.household.timezone,
+                    })}
+                  </p>
+                  {w.completedAt && (
+                    <p className="text-xs">
+                      Dernier cycle réussi :{" "}
+                      {w.completedAt.toLocaleString("fr-FR", {
+                        timeZone: context.household.timezone,
+                      })}
+                    </p>
+                  )}
+                  {w.lastError && (
+                    <p role="alert" className="mt-2 text-danger">
+                      {w.lastError}
+                    </p>
+                  )}
+                </div>
+              ))}
+              <MutationForm
+                compact
+                action={operationsAction}
+                label="Envoyer un email de test à mon adresse"
+              >
+                <input type="hidden" name="operation" value="smtp" />
+              </MutationForm>
+              <h3 className="font-semibold">30 derniers rappels du foyer</h3>
+              {!deliveries.length && (
+                <p className="text-sm text-muted-foreground">
+                  Aucun rappel distribué pour le moment.
+                </p>
+              )}
+              {deliveries.map((d) => (
+                <div key={d.id} className="rounded-xl border p-3 text-sm">
+                  <p>
+                    {d.channel === "push" ? "Push" : "Email"} ·{" "}
+                    {d.kind === "maintenance" ? "Entretien" : "Garantie"} ·{" "}
+                    {d.dueOn}
+                  </p>
+                  <p className="mt-2">
+                    {{
+                      sent: "Envoyé",
+                      pending: "En attente",
+                      failed: "Échec",
+                      cancelled: "Annulé",
+                    }[d.status] || d.status}{" "}
+                    · {d.attempts}/5 tentative(s)
+                  </p>
+                  {d.lastError && (
+                    <p className="mt-2 text-xs text-danger">{d.lastError}</p>
+                  )}
+                  {d.status === "failed" && (
+                    <MutationForm
+                      compact
+                      action={operationsAction}
+                      label="Relancer ce rappel"
+                    >
+                      <input type="hidden" name="operation" value="retry" />
+                      <input type="hidden" name="id" value={d.id} />
+                    </MutationForm>
+                  )}
+                </div>
+              ))}
+            </section>
+          )}
           <section className="panel">
             <h2 className="mb-2 text-lg font-semibold">Sécurité</h2>
             <p className="mb-6 break-all text-xs text-muted-foreground">
@@ -194,7 +381,26 @@ export default async function SettingsPage() {
                     {member.role === "admin" ? "Administrateur" : "Membre"}
                   </p>
                 </div>
-                {isAdmin && member.role === "member" && (
+                {isAdmin && (
+                  <MutationForm
+                    compact
+                    action={memberRoleAction}
+                    label={
+                      member.role === "admin"
+                        ? "Passer membre"
+                        : "Nommer administrateur"
+                    }
+                    confirmation={`Changer le rôle de ${member.name} ?`}
+                  >
+                    <input type="hidden" name="userId" value={member.id} />
+                    <input
+                      type="hidden"
+                      name="role"
+                      value={member.role === "admin" ? "member" : "admin"}
+                    />
+                  </MutationForm>
+                )}
+                {isAdmin && member.id !== context.user.id && (
                   <MutationForm
                     compact
                     action={removeAction}

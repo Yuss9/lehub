@@ -24,7 +24,7 @@ export async function GET(
     const buffer = await readPrivateFile(file.storageKey);
     const inline =
       new URL(request.url).searchParams.get("preview") === "1" &&
-      file.mime.startsWith("image/");
+      (file.mime.startsWith("image/") || file.mime === "application/pdf");
     return new Response(new Uint8Array(buffer), {
       headers: {
         "Content-Type": file.mime,

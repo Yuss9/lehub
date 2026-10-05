@@ -32,7 +32,7 @@ export function BackupControls({ admin }: { admin: boolean }) {
       if (!response.ok) throw Error(data.error);
       if (data.preview) setPreview(data.preview);
       else {
-        clearShopping();
+        await clearShopping();
         setPreview(null);
         setMessage("Le foyer a été restauré.");
         router.refresh();

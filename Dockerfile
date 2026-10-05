@@ -35,3 +35,19 @@ USER lehub
 EXPOSE 3000
 CMD ["node", "server.js"]
 
+
+FROM postgres:17-bookworm AS backup
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 ca-certificates && rm -rf /var/lib/apt/lists/* && groupadd --system --gid 1001 lehub && useradd --system --uid 1001 --gid lehub lehub && mkdir -p /app/data/backups && chown -R lehub:lehub /app/data
+COPY --from=dependencies /usr/local/bin/node /usr/local/bin/node
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --chown=lehub:lehub src ./src
+COPY --chown=lehub:lehub scripts ./scripts
+COPY package.json tsconfig.json ./
+USER lehub
+ENTRYPOINT []
+CMD ["node", "--import", "tsx", "scripts/server-backup.ts", "--schedule"]
+
+FROM backup AS validation
+COPY --chown=lehub:lehub drizzle ./drizzle
+CMD ["node", "--import", "tsx", "scripts/validate-instance.ts"]

@@ -1,0 +1,54 @@
+# Manual, isolated verification. No production volumes, credentials or host ports.
+services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_PASSWORD: disposable-validation-password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    tmpfs: /var/lib/postgresql/data
+  smtp:
+    build:
+      context: .
+      target: validation
+    command: ["node", "--import", "tsx", "scripts/smtp-fixture.ts"]
+  validation:
+    build:
+      context: .
+      target: validation
+    environment:
+      LEHUB_VALIDATION: isolated
+      TEST_POSTGRES_URL: postgresql://postgres:disposable-validation-password@postgres:5432/postgres
+      SMTP_HOST: smtp
+      SMTP_PORT: 1025
+      SMTP_FROM: lehub@example.test
+      SMTP_ALLOW_PLAINTEXT: "true"
+      BETTER_AUTH_URL: http://localhost:3000
+      BACKUP_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    depends_on:
+      postgres:
+        condition: service_healthy
+      smtp:
+        condition: service_started
+      application:
+        condition: service_started
+  application:
+    build:
+      context: .
+      target: runner
+    environment:
+      DATABASE_URL: postgresql://postgres:disposable-validation-password@postgres:5432/postgres
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_SECRET: disposable-validation-secret-at-least-32-characters
+      SETUP_KEY: disposable-validation-setup-key-at-least-32-characters
+    depends_on:
+      postgres:
+        condition: service_healthy
+  worker:
+    build:
+      context: .
+      target: worker
+    profiles: ["build-only"]
