@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
+import { clearShopping } from "@/lib/offline-shopping";
 import { Button } from "./ui/button";
 import { Field } from "./form";
 
@@ -22,6 +23,7 @@ export function SignOut() {
           try {
             const result = await authClient.signOut();
             if (result.error) throw Error();
+            clearShopping();
             router.push("/login");
             router.refresh();
           } catch {

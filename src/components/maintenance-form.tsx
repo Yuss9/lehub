@@ -5,15 +5,18 @@ export function MaintenanceForm({
   value,
   equipments,
   today,
+  equipmentId = "",
 }: {
   value?: typeof maintenance.$inferSelect;
   equipments: (typeof equipment.$inferSelect)[];
   today: string;
+  equipmentId?: string;
 }) {
   return (
     <EntityForm
       entity="maintenance"
       id={value?.id}
+      revision={value?.revision}
       label={value ? "Enregistrer" : "Planifier"}
     >
       <div className="grid gap-5 sm:grid-cols-2">
@@ -28,7 +31,7 @@ export function MaintenanceForm({
           label="Équipement"
           name="equipmentId"
           options={equipments}
-          value={value?.equipmentId}
+          value={value?.equipmentId || equipmentId}
         />
         <Field
           label="Prochaine échéance"

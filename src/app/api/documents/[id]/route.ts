@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { document } from "@/db/schema";
 import { getContext } from "@/lib/context";
@@ -13,7 +13,11 @@ export async function GET(
     .select()
     .from(document)
     .where(
-      and(eq(document.id, id), eq(document.householdId, context.household.id)),
+      and(
+        eq(document.id, id),
+        eq(document.householdId, context.household.id),
+        isNull(document.deletedAt),
+      ),
     );
   if (!file) return new Response("Introuvable", { status: 404 });
   try {

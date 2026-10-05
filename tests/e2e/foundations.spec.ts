@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { exerciseHome } from "./home-flow";
-test.setTimeout(120000);
+test.setTimeout(180000);
 
 test("first run, private household, invitation, settings and responsive themes", async ({
   page,
@@ -11,7 +11,7 @@ test("first run, private household, invitation, settings and responsive themes",
   await page.goto("/");
   await expect(page).toHaveURL(/\/setup$/);
   await page.screenshot({
-    path: "docs/screenshots/setup-desktop.png",
+    path: "docs/screenshots/workflows-setup-desktop.png",
     fullPage: true,
     animations: "disabled",
   });
@@ -35,7 +35,7 @@ test("first run, private household, invitation, settings and responsive themes",
     page.getByRole("heading", { name: "Aperçu", exact: true }),
   ).toBeVisible();
   await page.screenshot({
-    path: "docs/screenshots/overview-desktop.png",
+    path: "docs/screenshots/workflows-overview-desktop.png",
     fullPage: true,
     animations: "disabled",
   });
@@ -94,7 +94,7 @@ test("first run, private household, invitation, settings and responsive themes",
   await memberContext.close();
   await page.reload();
   await page.screenshot({
-    path: "docs/screenshots/settings-desktop.png",
+    path: "docs/screenshots/workflows-settings-desktop.png",
     fullPage: true,
     animations: "disabled",
   });
@@ -105,13 +105,13 @@ test("first run, private household, invitation, settings and responsive themes",
   await page.getByRole("button", { name: "Thème sombre", exact: true }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await page.screenshot({
-    path: "docs/screenshots/overview-dark.png",
+    path: "docs/screenshots/workflows-overview-dark.png",
     fullPage: true,
     animations: "disabled",
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({
-    path: "docs/screenshots/overview-mobile.png",
+    path: "docs/screenshots/workflows-overview-mobile.png",
     fullPage: true,
     animations: "disabled",
   });
@@ -120,13 +120,14 @@ test("first run, private household, invitation, settings and responsive themes",
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  await page.getByText("Plus", { exact: true }).click();
   await page.getByRole("link", { name: "Paramètres", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Paramètres", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Thème clair", exact: true }).click();
   await page.screenshot({
-    path: "docs/screenshots/settings-mobile.png",
+    path: "docs/screenshots/workflows-settings-mobile.png",
     fullPage: true,
     animations: "disabled",
   });

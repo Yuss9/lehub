@@ -16,7 +16,8 @@ export function ShoppingToggle({
     <form action={action} className="shrink-0">
       <input name="entity" type="hidden" value="shoppingItem" />
       <input name="id" type="hidden" value={id} />
-      <input name="operation" type="hidden" value="toggle" />
+      <input name="operation" type="hidden" value="checked" />
+      <input name="checked" type="hidden" value={String(!checked)} />
       <button
         disabled={pending}
         aria-label={`${checked ? "Décocher" : "Cocher"} ${name}`}

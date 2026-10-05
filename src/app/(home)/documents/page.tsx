@@ -1,44 +1,58 @@
-import Link from "next/link";
-import { Files, Download } from "lucide-react";
 import { getContext } from "@/lib/context";
-import { homeData } from "@/lib/home-data";
+import { homeData, pageNumber } from "@/lib/home-data";
 import { UploadForm } from "@/components/upload-form";
+import { DocumentCard } from "@/components/document-card";
 import {
   PageHeader,
   Editor,
   Empty,
   SearchForm,
   labels,
+  Pagination,
+  Action,
 } from "@/components/home-ui";
+import { db } from "@/db";
+import { document } from "@/db/schema";
+import { and, eq, isNotNull, desc } from "drizzle-orm";
 export default async function DocumentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; category?: string }>;
+  searchParams: Promise<{ q?: string; category?: string; page?: string }>;
 }) {
   const { household } = await getContext();
-  const data = await homeData(household.id);
   const params = await searchParams;
-  const query = (params.q || "").toLocaleLowerCase("fr");
-  const documents = data.documents.filter(
-    (d) =>
-      [d.title, d.originalName]
-        .join(" ")
-        .toLocaleLowerCase("fr")
-        .includes(query) &&
-      (!params.category || d.category === params.category),
-  );
+  const data = await homeData(household.id, {
+    modules: ["documents", "equipments"],
+    primary: "documents",
+    page: pageNumber(params.page),
+    query: params.q,
+    category: params.category,
+  });
+  const trash = await db
+    .select()
+    .from(document)
+    .where(
+      and(
+        eq(document.householdId, household.id),
+        isNotNull(document.deletedAt),
+      ),
+    )
+    .orderBy(desc(document.deletedAt))
+    .limit(20);
   return (
     <>
       <PageHeader
         title="Documents"
-        description="Factures, tickets, notices : tes essentiels dans un espace privé."
+        description="Factures, tickets, notices et photos, dans un espace privé."
       />
       <SearchForm query={params.q} action="/documents" />
-      <form className="mb-6 flex items-center gap-3">
+      <form className="mb-6 flex flex-wrap items-center gap-3">
+        <input name="q" type="hidden" value={params.q || ""} />
         <label className="text-sm">
           Type{" "}
           <select
             name="category"
+            aria-label="Filtrer par type"
             defaultValue={params.category || ""}
             className="min-h-11 rounded-xl border bg-surface px-3"
           >
@@ -52,46 +66,54 @@ export default async function DocumentsPage({
         </label>
         <button className="min-h-11 text-sm text-primary">Filtrer</button>
       </form>
-      <Editor title="Déposer un document" open={!data.documents.length}>
+      <Editor title="Déposer un document" open={!data.total}>
         <UploadForm equipments={data.equipments} />
       </Editor>
-      {!documents.length ? (
-        <Empty text="Aucun document. Dépose une facture, une notice ou une photo." />
+      {!data.documents.length ? (
+        <Empty text="Aucun document pour cette sélection." />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {documents.map((d) => (
-            <article key={d.id} id={d.id} className="panel card-enter">
-              <div className="mb-5 flex items-center gap-3">
-                <span className="rounded-xl bg-muted p-3">
-                  <Files size={20} />
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {labels[d.category]} · {(d.size / 1024).toFixed(0)} Ko
-                </span>
-              </div>
-              <h2 className="break-words font-semibold">{d.title}</h2>
-              <p className="mt-2 break-all text-xs text-muted-foreground">
-                {d.originalName}
-              </p>
-              {d.equipmentId && (
-                <p className="mt-3 text-sm">
-                  {data.equipments.find((e) => e.id === d.equipmentId)?.name}
-                </p>
-              )}
-              <Link
-                href={`/api/documents/${d.id}`}
-                className="mt-5 inline-flex min-h-11 items-center gap-2 text-sm text-primary"
-              >
-                <Download size={16} />
-                Télécharger
-              </Link>
-            </article>
+        <div className="space-y-5">
+          {data.documents.map((file) => (
+            <DocumentCard
+              key={file.id}
+              file={file}
+              equipments={data.equipments}
+            />
           ))}
         </div>
       )}
-      <p className="mt-6 text-xs leading-6 text-muted-foreground">
-        Les originaux sont conservés sur ton serveur et accessibles uniquement
-        aux membres de ton foyer.
+      <Pagination
+        path="/documents"
+        params={params}
+        page={data.page}
+        pages={data.pages}
+      />
+      {trash.length > 0 && (
+        <Editor title="Corbeille des documents">
+          <p className="mb-4 text-xs text-muted-foreground">
+            Restauration possible pendant 30 jours. Les fichiers sont ensuite
+            supprimés par le worker.
+          </p>
+          {trash.map((file) => (
+            <div
+              key={file.id}
+              className="flex items-center justify-between gap-3 border-t py-4"
+            >
+              <p className="text-sm">{file.title}</p>
+              <Action
+                entity="document"
+                id={file.id}
+                revision={file.revision}
+                operation="undo"
+                label="Restaurer le document"
+              />
+            </div>
+          ))}
+        </Editor>
+      )}
+      <p className="mt-6 text-xs text-muted-foreground">
+        La recherche couvre les titres, tags et textes reconnus. Accès réservé
+        aux membres du foyer.
       </p>
     </>
   );

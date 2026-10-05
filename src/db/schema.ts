@@ -165,6 +165,7 @@ export const room = pgTable(
   "room",
   {
     id: text().primaryKey(),
+    revision: integer().notNull().default(0),
     householdId: text("household_id")
       .notNull()
       .references(() => household.id, { onDelete: "cascade" }),
@@ -179,6 +180,7 @@ export const equipment = pgTable(
   "equipment",
   {
     id: text().primaryKey(),
+    revision: integer().notNull().default(0),
     householdId: text("household_id")
       .notNull()
       .references(() => household.id, { onDelete: "cascade" }),
@@ -187,6 +189,9 @@ export const equipment = pgTable(
     brand: text().notNull().default(""),
     model: text().notNull().default(""),
     serial: text().notNull().default(""),
+    purchasedCents: integer("purchased_cents"),
+    seller: text().notNull().default(""),
+    tags: text().notNull().default(""),
     notes: text().notNull().default(""),
     purchasedOn: text("purchased_on"),
     warrantyUntil: text("warranty_until"),
@@ -198,6 +203,7 @@ export const maintenance = pgTable(
   "maintenance",
   {
     id: text().primaryKey(),
+    revision: integer().notNull().default(0),
     householdId: text("household_id")
       .notNull()
       .references(() => household.id, { onDelete: "cascade" }),
@@ -227,6 +233,9 @@ export const intervention = pgTable(
       .references(() => maintenance.id, { onDelete: "cascade" }),
     completedOn: text("completed_on").notNull(),
     scheduledOn: text("scheduled_on").notNull(),
+    outcome: text().notNull().default("completed"),
+    costCents: integer("cost_cents"),
+    taskTitle: text("task_title").notNull().default(""),
     notes: text().notNull().default(""),
     completedBy: text("completed_by").references(() => user.id, {
       onDelete: "set null",
@@ -238,6 +247,8 @@ export const shoppingList = pgTable(
   "shopping_list",
   {
     id: text().primaryKey(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    revision: integer().notNull().default(0),
     householdId: text("household_id")
       .notNull()
       .references(() => household.id, { onDelete: "cascade" }),
@@ -249,6 +260,8 @@ export const shoppingItem = pgTable(
   "shopping_item",
   {
     id: text().primaryKey(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    revision: integer().notNull().default(0),
     householdId: text("household_id")
       .notNull()
       .references(() => household.id, { onDelete: "cascade" }),
@@ -256,6 +269,7 @@ export const shoppingItem = pgTable(
       .notNull()
       .references(() => shoppingList.id, { onDelete: "cascade" }),
     name: text().notNull(),
+    category: text().notNull().default("Autres"),
     quantity: text().notNull().default("1"),
     checked: boolean().notNull().default(false),
     equipmentId: text("equipment_id").references(() => equipment.id, {
@@ -271,12 +285,18 @@ export const document = pgTable(
   "document",
   {
     id: text().primaryKey(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    revision: integer().notNull().default(0),
     householdId: text("household_id")
       .notNull()
       .references(() => household.id, { onDelete: "cascade" }),
     equipmentId: text("equipment_id").references(() => equipment.id, {
       onDelete: "set null",
     }),
+    tags: text().notNull().default(""),
+    extractedText: text("extracted_text").notNull().default(""),
+    ocrStartedAt: timestamp("ocr_started_at", { withTimezone: true }),
+    ocrStatus: text("ocr_status").notNull().default("pending"),
     title: text().notNull(),
     category: text().notNull(),
     originalName: text("original_name").notNull(),
@@ -289,3 +309,68 @@ export const document = pgTable(
   },
   (t) => [index("document_household_idx").on(t.householdId)],
 );
+
+export const passwordReset = pgTable("password_reset", {
+  id: text().primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+export const reminderPreference = pgTable(
+  "reminder_preference",
+  {
+    householdId: text("household_id")
+      .notNull()
+      .references(() => household.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    emailEnabled: boolean("email_enabled").notNull().default(false),
+    leadDays: integer("lead_days").notNull().default(7),
+  },
+  (t) => [primaryKey({ columns: [t.householdId, t.userId] })],
+);
+export const reminderDelivery = pgTable(
+  "reminder_delivery",
+  {
+    id: text().primaryKey(),
+    householdId: text("household_id")
+      .notNull()
+      .references(() => household.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text().notNull(),
+    targetId: text("target_id").notNull(),
+    dueOn: text("due_on").notNull(),
+    status: text().notNull().default("pending"),
+    attempts: integer().notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("reminder_dedupe_idx").on(
+      t.householdId,
+      t.userId,
+      t.kind,
+      t.targetId,
+      t.dueOn,
+    ),
+  ],
+);
+export const offlineMutation = pgTable("offline_mutation", {
+  id: text().primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  householdId: text("household_id")
+    .notNull()
+    .references(() => household.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

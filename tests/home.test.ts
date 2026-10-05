@@ -10,8 +10,14 @@ import {
   owned,
   changeEntity,
   completeTask,
+  setShoppingChecked,
 } from "@/lib/home-domain";
-import { dateSchema, nextDue, today } from "@/lib/recurrence";
+import {
+  dateSchema,
+  nextDue,
+  today,
+  occurrencesInMonth,
+} from "@/lib/recurrence";
 import {
   detectMime,
   saveFile,
@@ -70,6 +76,7 @@ describe("Modules du foyer", () => {
       .from(schema.room)
       .where(eq(schema.room.householdId, "home"));
     await saveEntity(database, "member", "home", "room", room.id, {
+      revision: 0,
       name: "Buanderie",
       description: "Au rez-de-chaussée",
       position: "0",
@@ -99,6 +106,7 @@ describe("Modules du foyer", () => {
       "equipment",
       item.id,
       "archive",
+      0,
     );
     expect((await database.select().from(schema.equipment))[0].archived).toBe(
       true,
@@ -110,6 +118,7 @@ describe("Modules du foyer", () => {
       "equipment",
       item.id,
       "restore",
+      1,
     );
     await expect(
       saveEntity(database, "member", "home", "equipment", item.id, {
@@ -137,6 +146,7 @@ describe("Modules du foyer", () => {
       "Europe/Zurich",
       "Remplacé",
       task.dueOn,
+      { revision: 0 },
     );
     const [updated] = await database.select().from(schema.maintenance);
     expect(updated.dueOn > today("Europe/Zurich")).toBe(true);
@@ -150,8 +160,9 @@ describe("Modules du foyer", () => {
         "Europe/Zurich",
         "",
         task.dueOn,
+        { revision: 0 },
       ),
-    ).rejects.toThrow("planning a changé");
+    ).rejects.toThrow("modifié");
     expect(
       (await database.select().from(schema.intervention))[0],
     ).toMatchObject({
@@ -168,6 +179,7 @@ describe("Modules du foyer", () => {
         "UTC",
         "",
         task.dueOn,
+        { revision: 0 },
       ),
     ).rejects.toThrow();
     await saveEntity(database, "member", "home", "maintenance", "", {
@@ -191,9 +203,12 @@ describe("Modules du foyer", () => {
       "UTC",
       "",
       once.dueOn,
+      { revision: 0 },
     );
     await expect(
-      completeTask(database, "member", "home", once.id, "UTC", "", once.dueOn),
+      completeTask(database, "member", "home", once.id, "UTC", "", once.dueOn, {
+        revision: 1,
+      }),
     ).rejects.toThrow("indisponible");
   });
   it("shares lists, toggles atomically and cascades deletion without crossing households", async () => {
@@ -216,17 +231,15 @@ describe("Modules du foyer", () => {
         "foreign",
         "shoppingItem",
         item.id,
-        "toggle",
+        "delete",
+        0,
       ),
     ).rejects.toThrow();
-    await changeEntity(
-      database,
-      "member",
-      "home",
-      "shoppingItem",
-      item.id,
-      "toggle",
-    );
+    await expect(
+      setShoppingChecked(database, "member", "foreign", item.id, true),
+    ).rejects.toThrow();
+    await setShoppingChecked(database, "member", "home", item.id, true);
+    await setShoppingChecked(database, "member", "home", item.id, true);
     expect((await database.select().from(schema.shoppingItem))[0].checked).toBe(
       true,
     );
@@ -237,12 +250,36 @@ describe("Modules du foyer", () => {
       "shoppingList",
       list.id,
       "delete",
+      0,
     );
-    expect(await database.select().from(schema.shoppingItem)).toHaveLength(0);
+    expect(
+      (await database.select().from(schema.shoppingList))[0].deletedAt,
+    ).not.toBeNull();
+    expect(await database.select().from(schema.shoppingItem)).toHaveLength(1);
+    await changeEntity(
+      database,
+      "member",
+      "home",
+      "shoppingList",
+      list.id,
+      "undo",
+      1,
+    );
   });
 });
 describe("Dates civiles et récurrences", () => {
   it("preserves month-end anchors and leap years without timezone drift", () => {
+    expect(
+      occurrencesInMonth(
+        {
+          dueOn: "1900-01-31",
+          frequency: "monthly",
+          interval: 1,
+          anchorDay: 31,
+        },
+        "2026-03",
+      ),
+    ).toEqual(["2026-03-31"]);
     expect(nextDue("2024-01-31", "monthly", 1, 31)).toBe("2024-02-29");
     expect(nextDue("2024-02-29", "monthly", 1, 31)).toBe("2024-03-31");
     expect(nextDue("2024-02-29", "yearly", 1, 29)).toBe("2025-02-28");

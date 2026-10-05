@@ -1,7 +1,10 @@
 import Link from "next/link";
 import Image from "next/image";
+import { db } from "@/db";
+import { document } from "@/db/schema";
+import { and, eq, isNull, inArray } from "drizzle-orm";
 import { getContext } from "@/lib/context";
-import { homeData } from "@/lib/home-data";
+import { homeData, pageNumber } from "@/lib/home-data";
 import { EquipmentForm } from "@/components/equipment-form";
 import { UploadForm } from "@/components/upload-form";
 import {
@@ -11,25 +14,46 @@ import {
   Empty,
   SearchForm,
   dateLabel,
+  Pagination,
 } from "@/components/home-ui";
 export default async function EquipmentPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; room?: string; archived?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    room?: string;
+    archived?: string;
+    page?: string;
+  }>;
 }) {
   const { household } = await getContext();
-  const data = await homeData(household.id);
   const params = await searchParams;
-  const query = (params.q || "").toLocaleLowerCase("fr");
-  const equipments = data.equipments.filter(
-    (e) =>
-      (params.archived === "1" || !e.archived) &&
-      (!params.room || e.roomId === params.room) &&
-      [e.name, e.brand, e.model, e.serial, e.notes]
-        .join(" ")
-        .toLocaleLowerCase("fr")
-        .includes(query),
-  );
+  const data = await homeData(household.id, {
+    modules: ["equipments", "rooms"],
+    primary: "equipments",
+    page: pageNumber(params.page),
+    query: params.q,
+    roomId: params.room,
+    archived: params.archived === "1",
+  });
+  const equipments = data.equipments;
+  const documents = equipments.length
+    ? await db
+        .select()
+        .from(document)
+        .where(
+          and(
+            eq(document.householdId, household.id),
+            isNull(document.deletedAt),
+            inArray(
+              document.equipmentId,
+              equipments.map((e) => e.id),
+            ),
+          ),
+        )
+        .orderBy(document.title)
+        .limit(100)
+    : [];
   return (
     <>
       <PageHeader
@@ -84,7 +108,7 @@ export default async function EquipmentPage({
                     "Sans pièce"}
                 </p>
                 <h2 className="mt-2 text-xl font-semibold">
-                  {e.name}
+                  <Link href={`/equipment/${e.id}`}>{e.name}</Link>
                   {e.archived && " · Archivé"}
                 </h2>
                 <p className="mt-2 text-sm text-muted-foreground">
@@ -95,6 +119,7 @@ export default async function EquipmentPage({
               <Action
                 entity="equipment"
                 id={e.id}
+                revision={e.revision}
                 operation={e.archived ? "restore" : "archive"}
                 label={e.archived ? "Restaurer" : "Archiver"}
               />
@@ -121,7 +146,7 @@ export default async function EquipmentPage({
               </p>
             )}
             <div className="mb-5 flex flex-wrap items-start gap-3">
-              {data.documents
+              {documents
                 .filter((d) => d.equipmentId === e.id)
                 .map((d) => (
                   <Link
@@ -157,6 +182,12 @@ export default async function EquipmentPage({
           </article>
         ))}
       </div>
+      <Pagination
+        path="/equipment"
+        params={params}
+        page={data.page}
+        pages={data.pages}
+      />
     </>
   );
 }

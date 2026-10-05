@@ -1,3 +1,4 @@
+import AdmZip from "adm-zip";
 import { expect, type Page, type Browser } from "@playwright/test";
 export async function exerciseHome(page: Page, browser: Browser) {
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -52,10 +53,25 @@ export async function exerciseHome(page: Page, browser: Browser) {
   await page.goto("/equipment");
   await page.getByText("Ajouter une photo", { exact: true }).click();
   await page.getByLabel("Titre", { exact: true }).fill("Photo appareil");
-  await page.getByLabel("Photo", { exact: true }).setInputFiles({ name: "appareil.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", "base64") });
-  await page.getByRole("button", { name: "Ajouter la photo", exact: true }).click();
+  await page.getByLabel("Photo", { exact: true }).setInputFiles({
+    name: "appareil.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
+  await page
+    .getByRole("button", { name: "Ajouter la photo", exact: true })
+    .click();
   await expect(page.getByRole("img", { name: "Photo appareil" })).toBeVisible();
-  expect(await page.getByRole("img", { name: "Photo appareil" }).evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  expect(
+    await page
+      .getByRole("img", { name: "Photo appareil" })
+      .evaluate(
+        (img: HTMLImageElement) => img.complete && img.naturalWidth > 0,
+      ),
+  ).toBe(true);
   await page.goto("/maintenance");
   await page.getByLabel("Tâche", { exact: true }).fill("Nettoyer le filtre");
   await page
@@ -73,7 +89,7 @@ export async function exerciseHome(page: Page, browser: Browser) {
   await page.getByRole("button", { name: "Confirmer la réalisation" }).click();
   await expect(page.getByText("Filtre nettoyé", { exact: true })).toBeVisible();
   await page.screenshot({
-    path: "docs/screenshots/maintenance-desktop.png",
+    path: "docs/screenshots/workflows-maintenance-desktop.png",
     fullPage: true,
     animations: "disabled",
   });
@@ -87,6 +103,9 @@ export async function exerciseHome(page: Page, browser: Browser) {
   await page.getByLabel("Quantité", { exact: true }).fill("2");
   await page.getByRole("button", { name: "Ajouter à la liste" }).click();
   await expect(page.getByText("2 × Pastilles", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Courses à jour", { exact: false }),
+  ).toBeVisible();
   const member = await browser.newContext();
   const shared = await member.newPage();
   await shared.goto("/login");
@@ -105,19 +124,83 @@ export async function exerciseHome(page: Page, browser: Browser) {
     shared.getByText("2 × Pastilles", { exact: true }),
   ).toBeVisible();
   await shared
-    .getByRole("button", { name: "Cocher Pastilles", exact: true })
+    .getByRole("checkbox", { name: "Cocher Pastilles", exact: true })
     .click();
   await expect(
-    shared.getByRole("button", { name: "Décocher Pastilles" }),
+    shared.getByRole("checkbox", { name: "Décocher Pastilles" }),
   ).toBeVisible();
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Décocher Pastilles" }),
+    page.getByRole("checkbox", { name: "Décocher Pastilles" }),
   ).toBeVisible();
   expect((await shared.request.get(downloadUrl)).status()).toBe(200);
+  await page
+    .getByLabel("Conserver mes courses hors ligne sur cet appareil")
+    .check();
+  await page.goto("/offline");
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await expect(page.getByText("2 × Pastilles", { exact: true })).toBeVisible();
+  await page.context().setOffline(true);
+  await page
+    .getByRole("checkbox", { name: "Décocher Pastilles", exact: true })
+    .click();
+  await page.getByLabel("Article", { exact: true }).fill("Pain hors ligne");
+  await page.getByLabel("Quantité", { exact: true }).fill("1");
+  await page.getByLabel("Catégorie", { exact: true }).fill("Boulangerie");
+  await page
+    .getByRole("button", { name: "Ajouter à la liste", exact: true })
+    .click();
+  await page.reload();
+  await expect(
+    page.getByText("1 × Pain hors ligne", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("checkbox", { name: "Cocher Pastilles", exact: true }),
+  ).toBeVisible();
+  await page.context().setOffline(false);
+  await expect(page.getByText("Courses à jour", { exact: false })).toBeVisible({
+    timeout: 20000,
+  });
+  await shared.reload();
+  await expect(
+    shared.getByText("1 × Pain hors ligne", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    shared.getByRole("checkbox", { name: "Cocher Pastilles", exact: true }),
+  ).toBeVisible();
+  await page.goto("/shopping");
+  await page
+    .getByRole("button", { name: "Modifier Pain hors ligne", exact: true })
+    .click();
+  await page.getByLabel("Quantité de l’article").fill("2");
+  await page
+    .getByRole("button", { name: "Enregistrer l’article", exact: true })
+    .click();
+  await expect(
+    page.getByText("2 × Pain hors ligne", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Courses à jour", { exact: false })).toBeVisible({
+    timeout: 20000,
+  });
+  await page
+    .getByRole("button", { name: "Retirer Pain hors ligne", exact: true })
+    .click();
+  await page
+    .getByText("Articles retirés · annuler une suppression", { exact: true })
+    .click();
+  await page.getByRole("button", { name: "Rétablir", exact: true }).click();
+  await expect(
+    page.getByText("2 × Pain hors ligne", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Courses à jour", { exact: false })).toBeVisible({
+    timeout: 20000,
+  });
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({
-    path: "docs/screenshots/shopping-mobile.png",
+    path: "docs/screenshots/workflows-shopping-mobile.png",
     fullPage: true,
     animations: "disabled",
   });
@@ -135,7 +218,10 @@ export async function exerciseHome(page: Page, browser: Browser) {
   ).toBeVisible();
   const exported = await page.request.get("/api/export");
   expect(exported.status()).toBe(200);
-  const data = await exported.json();
+  const archive = new AdmZip(await exported.body());
+  const data = JSON.parse(
+    archive.getEntry("manifest.json")!.getData().toString(),
+  );
   expect(data.equipments[0].name).toBe("Lave-vaisselle");
   expect(data.history[0].notes).toBe("Filtre nettoyé");
   expect(data.documents[0].storageKey).toBeUndefined();
@@ -144,29 +230,61 @@ export async function exerciseHome(page: Page, browser: Browser) {
     page.getByRole("link", { name: /Lave-vaisselle/ }),
   ).toBeVisible();
   await page.screenshot({
-    path: "docs/screenshots/home-modules-mobile.png",
+    path: "docs/screenshots/workflows-home-modules-mobile.png",
     fullPage: true,
     animations: "disabled",
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.screenshot({
-    path: "docs/screenshots/home-modules-desktop.png",
+    path: "docs/screenshots/workflows-home-modules-desktop.png",
     fullPage: true,
     animations: "disabled",
   });
   await page.getByRole("button", { name: "Thème sombre", exact: true }).click();
   await page.screenshot({
-    path: "docs/screenshots/home-modules-dark.png",
+    path: "docs/screenshots/workflows-home-modules-dark.png",
     fullPage: true,
     animations: "disabled",
   });
   await page.goto("/equipment");
   await page.screenshot({
-    path: "docs/screenshots/equipment-desktop.png",
+    path: "docs/screenshots/workflows-equipment-desktop.png",
+    fullPage: true,
+    animations: "disabled",
+  });
+  await page.getByRole("link", { name: "Lave-vaisselle", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Photos et documents", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "docs/screenshots/workflows-equipment-detail.png",
     fullPage: true,
     animations: "disabled",
   });
   await page.goto("/settings");
+  await page.getByLabel("Recevoir mes rappels par email").check();
+  await page.getByLabel("Jours avant l’échéance").fill("14");
+  await page
+    .getByRole("button", { name: "Enregistrer les rappels", exact: true })
+    .click();
+  await expect(page.getByText("Tes rappels sont enregistrés.")).toBeVisible();
+  const preview = await page.request.post("/api/backup", {
+    headers: { Origin: "http://localhost:3000" },
+    multipart: {
+      file: {
+        name: "backup.zip",
+        mimeType: "application/zip",
+        buffer: await exported.body(),
+      },
+    },
+  });
+  expect(preview.status()).toBe(200);
+  expect((await preview.json()).preview.documents).toBe(2);
+  await page.screenshot({
+    path: "docs/screenshots/workflows-settings.png",
+    fullPage: true,
+    animations: "disabled",
+  });
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Retirer", exact: true }).click();
   await expect(
@@ -177,6 +295,6 @@ export async function exerciseHome(page: Page, browser: Browser) {
   ).toBe(307);
   expect(
     (await shared.request.get("/api/export", { maxRedirects: 0 })).status(),
-  ).toBe(307);
+  ).toBe(401);
   await member.close();
 }

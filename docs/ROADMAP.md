@@ -3,13 +3,14 @@
 1. **Fondations** : comptes privés, foyer, invitations, paramètres, thèmes et Docker manuel.
 2. **Modules du foyer** : pièces et équipements, entretiens, courses, documents, tableau de bord, garanties, recherche et export. Regroupement demandé explicitement par le propriétaire ; voir [HOME-MODULES.md](HOME-MODULES.md).
 
+3. **Parcours complets** : protections de concurrence, gestion des fichiers, rappels, récupération d’accès, entretiens flexibles, courses hors ligne, fiches équipement, sauvegarde/restauration, calendrier, OCR, tags et pagination.
+
 Les modifications sont proposées dans une branche dédiée et une PR vers `main`. Le propriétaire révise et fusionne ; aucun pipeline ou déploiement automatique.
 
 ## Évolutions possibles
 
-- Sélecteur de foyer, pagination et recherche SQL.
-- Modification/suppression des documents et aperçu PDF.
-- Notifications des échéances et garanties.
-- Calendrier graphique, import d’export et courses hors ligne.
+- Sélecteur de foyer et administration de plusieurs foyers.
+- Notifications push et glisser-déposer dans le calendrier.
+- Aperçu PDF intégré.
 
 L’interface utilise exclusivement les données réelles de PostgreSQL. Aucun jeu de démonstration en production. Les limites actuelles et instructions de migration sont décrites dans HOME-MODULES.md et README.md.

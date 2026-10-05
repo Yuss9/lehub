@@ -1,5 +1,8 @@
 import { getContext } from "@/lib/context";
-import { homeData } from "@/lib/home-data";
+import { homeData, pageNumber } from "@/lib/home-data";
+import { db } from "@/db";
+import { equipment } from "@/db/schema";
+import { and, eq, inArray, count } from "drizzle-orm";
 import { Field } from "@/components/form";
 import {
   PageHeader,
@@ -8,16 +11,46 @@ import {
   Action,
   Empty,
   Jump,
+  Pagination,
+  SearchForm,
 } from "@/components/home-ui";
-export default async function RoomsPage() {
+export default async function RoomsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; q?: string }>;
+}) {
+  const params = await searchParams;
   const { household } = await getContext();
-  const { rooms, equipments } = await homeData(household.id);
+  const data = await homeData(household.id, {
+    modules: ["rooms"],
+    primary: "rooms",
+    page: pageNumber(params.page),
+    query: params.q,
+  });
+  const { rooms } = data;
+  const counts = rooms.length
+    ? await db
+        .select({ roomId: equipment.roomId, n: count() })
+        .from(equipment)
+        .where(
+          and(
+            eq(equipment.householdId, household.id),
+            eq(equipment.archived, false),
+            inArray(
+              equipment.roomId,
+              rooms.map((r) => r.id),
+            ),
+          ),
+        )
+        .groupBy(equipment.roomId)
+    : [];
   return (
     <>
       <PageHeader
         title="Pièces"
         description="Une place pour chaque chose. Organise les pièces de ton foyer."
       />
+      <SearchForm action="/rooms" query={params.q} />
       <Editor title="Créer une pièce" open={!rooms.length}>
         <EntityForm entity="room" label="Créer la pièce">
           <div className="grid gap-5 sm:grid-cols-2">
@@ -60,22 +93,19 @@ export default async function RoomsPage() {
                   {r.description || "Ton espace, à organiser."}
                 </p>
                 <Jump href={`/equipment?room=${r.id}`}>
-                  {
-                    equipments.filter((e) => e.roomId === r.id && !e.archived)
-                      .length
-                  }{" "}
-                  équipements
+                  {counts.find((c) => c.roomId === r.id)?.n || 0} équipements
                 </Jump>
               </div>
               <Action
                 entity="room"
                 id={r.id}
+                revision={r.revision}
                 operation={r.archived ? "restore" : "archive"}
                 label={r.archived ? "Restaurer" : "Archiver"}
               />
             </div>
             <Editor title="Modifier la pièce">
-              <EntityForm entity="room" id={r.id}>
+              <EntityForm entity="room" id={r.id} revision={r.revision}>
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field
                     label="Nom"
@@ -102,6 +132,12 @@ export default async function RoomsPage() {
           </section>
         ))}
       </div>
+      <Pagination
+        path="/rooms"
+        params={params}
+        page={data.page}
+        pages={data.pages}
+      />
     </>
   );
 }
