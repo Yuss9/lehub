@@ -35,6 +35,7 @@ export function Navigation() {
           <Link
             key={href}
             href={href}
+            prefetch={false}
             aria-current={path === href ? "page" : undefined}
             className={cn(
               "flex min-h-11 items-center gap-3 rounded-xl px-4 text-sm transition-colors",
@@ -57,6 +58,7 @@ export function Navigation() {
             <Link
               key={href}
               href={href}
+              prefetch={false}
               aria-current={path === href ? "page" : undefined}
               className={cn(
                 "flex min-h-12 min-w-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px]",
@@ -81,6 +83,7 @@ export function Navigation() {
                 <Link
                   key={href}
                   href={href}
+                  prefetch={false}
                   className="flex min-h-12 items-center gap-3 rounded-xl p-3 text-sm hover:bg-muted"
                   onClick={(e) =>
                     e.currentTarget.closest("details")?.removeAttribute("open")

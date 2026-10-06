@@ -119,6 +119,7 @@ export default async function MaintenancePage({
             <button className="min-h-11 text-primary text-sm">Afficher</button>
             <Link
               href="/maintenance"
+              prefetch={false}
               className="min-h-11 py-3 text-sm text-primary"
             >
               Toutes les échéances
@@ -257,6 +258,7 @@ export default async function MaintenancePage({
           </h2>
           <Link
             href="/maintenance?view=history"
+            prefetch={false}
             className="min-h-11 py-3 text-sm text-primary"
           >
             Tout l’historique

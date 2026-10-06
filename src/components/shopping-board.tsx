@@ -30,6 +30,8 @@ export function ShoppingBoard({
   );
   const [enabled, setEnabled] = useState(false);
   const [cacheReady, setCacheReady] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const loadingStorage = useRef(true);
   const [online, setOnline] = useState(true);
   const [message, setMessage] = useState("");
   const [listId, setListId] = useState(
@@ -45,6 +47,30 @@ export function ShoppingBoard({
   const [saving, setSaving] = useState(false);
   const [discardPending, setDiscardPending] = useState<LocalShopping | null>(null);
   const [disabling, setDisabling] = useState(false);
+  async function enableOffline() {
+    if (loadingStorage.current || writes.current > 0 || !current.current) return;
+    const epoch = ++generation.current;
+    writes.current++;
+    setSaving(true);
+    opted.current = true;
+    setEnabled(true);
+    setCacheReady(false);
+    try {
+      const saved = await writeShopping(current.current);
+      if (epoch !== generation.current) return;
+      current.current = saved;
+      setLocal(saved);
+      setCacheReady(true);
+    } catch {
+      if (epoch !== generation.current) return;
+      opted.current = false;
+      setEnabled(false);
+      setMessage("Stockage indisponible.");
+    } finally {
+      writes.current--;
+      setSaving(writes.current > 0);
+    }
+  }
   async function disableOffline(confirmedIds: string[] = []) {
     if (writes.current > 0) { setMessage("Attends la fin de l’enregistrement avant de désactiver le hors ligne."); return; }
     setDisabling(true);
@@ -227,9 +253,15 @@ export function ShoppingBoard({
       setMessage(
         "Stockage indisponible. Les courses hors ligne ne peuvent pas être conservées.",
       ),
-    );
+    ).finally(() => { loadingStorage.current = false; setInitializing(false); });
     const unwatch = watchShopping(() => {
-      void readShopping(current.current?.state.scope).then((cached) => {
+      // Ignore reads started before opt-in and announcements while its write is
+      // pending. The atomic write returns the latest merged household queue.
+      if (loadingStorage.current || writes.current > 0) return;
+      const epoch = generation.current;
+      const scope = current.current?.state.scope;
+      void readShopping(scope).then((cached) => {
+        if (epoch !== generation.current || scope !== current.current?.state.scope) return;
         if (cached && cached.state.scope === current.current?.state.scope) {
           current.current = cached;
           setLocal(cached);
@@ -237,6 +269,7 @@ export function ShoppingBoard({
           generation.current++;
           opted.current = false;
           setEnabled(false);
+          setCacheReady(false);
           const next = { ...current.current!, queue: [] };
           current.current = next;
           setLocal(next);
@@ -373,21 +406,10 @@ export function ShoppingBoard({
           <input
             type="checkbox"
             checked={enabled}
-            disabled={disabling || saving}
+            disabled={initializing || disabling || saving}
             onChange={(e) => {
               if (!e.target.checked) { void disableOffline(); return; }
-              opted.current = e.target.checked;
-              setEnabled(e.target.checked);
-              setCacheReady(false);
-              if (e.target.checked)
-                void writeShopping(current.current || local)
-                  .then(() => setCacheReady(true))
-                  .catch(() => {
-                    opted.current = false;
-                    setEnabled(false);
-                    setMessage("Stockage indisponible.");
-                  });
-
+              void enableOffline();
             }}
           />{" "}
           Conserver mes courses hors ligne sur cet appareil

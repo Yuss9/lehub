@@ -9,6 +9,9 @@ import { once } from "node:events";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { cp, mkdtemp, rm } from "node:fs/promises";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createTcpServer, connect } from "node:net";
+import { randomUUID } from "node:crypto";
 const db = await PGlite.create();
 await migrate(drizzle(db), { migrationsFolder: "./drizzle" });
 const server = new PGLiteSocketServer({
@@ -19,8 +22,34 @@ const server = new PGLiteSocketServer({
 });
 await server.start();
 let app;
+// A real origin outage tests service-worker responses without WebKit's broken
+// setOffline navigation emulation (microsoft/playwright#42775). Test-only, local.
+let unavailable = false;
+const sockets = new Set();
+const outageToken = randomUUID();
+const origin = createTcpServer((socket) => {
+  if (unavailable) { socket.destroy(); return; }
+  sockets.add(socket);
+  const upstream = connect(3001, "127.0.0.1");
+  socket.pipe(upstream).pipe(socket);
+  socket.on("error", () => upstream.destroy());
+  upstream.on("error", () => socket.destroy());
+  socket.on("close", () => { sockets.delete(socket); upstream.destroy(); });
+});
+const control = createHttpServer((request, response) => {
+  if (request.method !== "POST" || request.headers.authorization !== `Bearer ${outageToken}` || !["/offline", "/online"].includes(request.url)) {
+    response.writeHead(403).end(); return;
+  }
+  unavailable = request.url === "/offline";
+  if (unavailable) for (const socket of sockets) socket.destroy();
+  response.writeHead(204).end();
+});
 const filesDirectory = await mkdtemp(path.join(tmpdir(), "lehub-e2e-"));
 try {
+  origin.listen(3000, "127.0.0.1");
+  await once(origin, "listening");
+  control.listen(0, "127.0.0.1");
+  await once(control, "listening");
   // Mirrors the production Docker image's standalone file layout.
   await cp(".next/static", ".next/standalone/.next/static", {
     recursive: true,
@@ -35,7 +64,9 @@ try {
     BETTER_AUTH_SECRET: "only-for-temporary-local-testing-123456789",
     SETUP_KEY: "only-for-temporary-local-setup-123456789",
     HOSTNAME: "127.0.0.1",
-    PORT: "3000",
+    PORT: "3001",
+    E2E_OUTAGE_URL: `http://127.0.0.1:${control.address().port}`,
+    E2E_OUTAGE_TOKEN: outageToken,
     NODE_ENV: "production",
     // Dummy configuration only: no worker sends notifications in this harness.
     VAPID_PUBLIC_KEY: "mocked-local-public-key",
@@ -67,6 +98,10 @@ try {
   const [code] = await once(test, "exit");
   process.exitCode = code ?? 1;
 } finally {
+  for (const socket of sockets) socket.destroy();
+  if (origin.listening) await new Promise((resolve) => origin.close(resolve));
+  control.closeAllConnections();
+  if (control.listening) await new Promise((resolve) => control.close(resolve));
   if (app && app.exitCode === null) {
     app.kill("SIGTERM");
     await once(app, "exit");

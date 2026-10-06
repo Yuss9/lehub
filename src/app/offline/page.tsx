@@ -9,7 +9,7 @@ export default function OfflinePage() {
         synchronisés après vérification de ton accès.
       </p>
       <ShoppingBoard />
-      <Link href="/shopping" className="mt-6 inline-block text-sm text-primary">
+      <Link href="/shopping" prefetch={false} className="mt-6 inline-block text-sm text-primary">
         Revenir au foyer
       </Link>
     </main>
