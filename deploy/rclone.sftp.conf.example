@@ -1,0 +1,13 @@
+# Copy to backup-config/rclone.conf and replace ALL placeholders.
+# Generate an rclone-compatible obscured password with `rclone obscure`.
+# This password encoding is reversible: keep the config private (mode 600).
+[offsite]
+type = sftp
+host = REPLACE_WITH_OTHER_SERVER
+user = REPLACE_WITH_BACKUP_USER
+port = 22
+pass = REPLACE_WITH_RCLONE_OBSCURED_PASSWORD
+known_hosts_file = /config/known_hosts
+
+# In .env: BACKUP_REMOTE=offsite:/absolute/backup/path/lehub
+# Put verified server host keys in backup-config/known_hosts.

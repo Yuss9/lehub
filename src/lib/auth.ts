@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { twoFactor } from "better-auth/plugins";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/db";
 import * as schema from "@/db/schema";
@@ -9,6 +10,12 @@ export function createAuth(
 ) {
   return betterAuth({
     appName: "lehub",
+    plugins: [
+      twoFactor({
+        issuer: "lehub",
+        backupCodeOptions: { storeBackupCodes: "encrypted" },
+      }),
+    ],
     baseURL: options.baseURL ?? process.env.BETTER_AUTH_URL,
     secret: options.secret ?? process.env.BETTER_AUTH_SECRET,
     database: drizzleAdapter(database, { provider: "pg", schema }),

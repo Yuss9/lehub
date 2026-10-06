@@ -190,6 +190,32 @@ export async function saveEntity(
       );
   }
 }
+/** Move only the next occurrence; keep the recurrence's original reference day. */
+export async function postponeTask(
+  database: Database,
+  actorId: string,
+  householdId: string,
+  id: string,
+  revision: unknown,
+  date: unknown,
+) {
+  await requireMembership(database, actorId, householdId);
+  const dueOn = dateSchema.parse(date);
+  const changed = await database
+    .update(maintenance)
+    .set({ dueOn, revision: sql`${maintenance.revision} + 1` })
+    .where(
+      and(
+        eq(maintenance.id, id),
+        eq(maintenance.householdId, householdId),
+        eq(maintenance.revision, revisionSchema.parse(revision)),
+        eq(maintenance.archived, false),
+      ),
+    )
+    .returning({ id: maintenance.id });
+  if (!changed.length)
+    throw new DomainError("Le planning a changé. Actualise la page.");
+}
 export async function completeTask(
   database: Database,
   actorId: string,
@@ -227,20 +253,18 @@ export async function completeTask(
       throw new DomainError(
         "Le planning a changé. Actualise la page avant de confirmer.",
       );
-    await tx
-      .insert(intervention)
-      .values({
-        id: randomUUID(),
-        householdId,
-        maintenanceId: id,
-        scheduledOn: task.dueOn,
-        completedOn,
-        completedBy: actorId,
-        notes: note.parse(notes),
-        costCents,
-        outcome: options.outcome || "completed",
-        taskTitle: task.title,
-      });
+    await tx.insert(intervention).values({
+      id: randomUUID(),
+      householdId,
+      maintenanceId: id,
+      scheduledOn: task.dueOn,
+      completedOn,
+      completedBy: actorId,
+      notes: note.parse(notes),
+      costCents,
+      outcome: options.outcome || "completed",
+      taskTitle: task.title,
+    });
     if (task.frequency === "once")
       await tx
         .update(maintenance)
@@ -398,19 +422,17 @@ export async function recordPastIntervention(
       .for("update");
     if (!task) throw new DomainError("Entretien introuvable.");
     assertRevision(raw.revision, task.revision);
-    await tx
-      .insert(intervention)
-      .values({
-        id: randomUUID(),
-        householdId,
-        maintenanceId: id,
-        completedOn,
-        scheduledOn: dateSchema.parse(raw.scheduledOn || completedOn),
-        costCents: moneySchema.parse(raw.cost),
-        notes: note.parse(raw.notes),
-        completedBy: actorId,
-        taskTitle: task.title,
-      });
+    await tx.insert(intervention).values({
+      id: randomUUID(),
+      householdId,
+      maintenanceId: id,
+      completedOn,
+      scheduledOn: dateSchema.parse(raw.scheduledOn || completedOn),
+      costCents: moneySchema.parse(raw.cost),
+      notes: note.parse(raw.notes),
+      completedBy: actorId,
+      taskTitle: task.title,
+    });
     await tx
       .update(maintenance)
       .set({ revision: sql`${maintenance.revision} + 1` })

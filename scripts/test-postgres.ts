@@ -14,6 +14,7 @@ import {
   completeTask,
   setShoppingChecked,
   changeEntity,
+  postponeTask,
 } from "../src/lib/home-domain";
 import { applyShoppingMutation } from "../src/lib/shopping-domain";
 import { manageMember } from "../src/lib/domain";
@@ -172,11 +173,36 @@ try {
     ).filter((m) => m.role === "admin").length,
     1,
   );
-  const [trace] = await da.select().from(schema.interventionCorrection).where(eq(schema.interventionCorrection.interventionId, history.id));
+  const [trace] = await da
+    .select()
+    .from(schema.interventionCorrection)
+    .where(eq(schema.interventionCorrection.interventionId, history.id));
   assert.ok(trace);
-  assert.equal((await da.select().from(schema.interventionCorrection).where(eq(schema.interventionCorrection.interventionId, history.id))).length, 1);
-  for (const actor of ["a", "b"]) await da.insert(schema.session).values({ id: `session-${actor}`, userId: actor, token: `session-${actor}`, expiresAt: new Date(Date.now() + 86400000) });
-  const subscription = (id: string) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/${id}`, keys: { p256dh: Buffer.alloc(65).toString("base64url"), auth: Buffer.alloc(16).toString("base64url") } });
+  assert.equal(
+    (
+      await da
+        .select()
+        .from(schema.interventionCorrection)
+        .where(eq(schema.interventionCorrection.interventionId, history.id))
+    ).length,
+    1,
+  );
+  for (const actor of ["a", "b"])
+    await da
+      .insert(schema.session)
+      .values({
+        id: `session-${actor}`,
+        userId: actor,
+        token: `session-${actor}`,
+        expiresAt: new Date(Date.now() + 86400000),
+      });
+  const subscription = (id: string) => ({
+    endpoint: `https://fcm.googleapis.com/fcm/send/${id}`,
+    keys: {
+      p256dh: Buffer.alloc(65).toString("base64url"),
+      auth: Buffer.alloc(16).toString("base64url"),
+    },
+  });
   await Promise.all([
     subscribePush(da, "a", home, subscription("shared"), "session-a"),
     subscribePush(db, "b", home, subscription("shared"), "session-b"),
@@ -185,36 +211,118 @@ try {
   await da.delete(schema.pushSubscription);
   await subscribePush(da, "a", home, subscription("good"), "session-a");
   await subscribePush(da, "a", home, subscription("bad"), "session-a");
-  const pushTask = randomUUID(), pushDelivery = randomUUID();
-  await da.insert(schema.maintenance).values({ id: pushTask, householdId: home, title: "Push concurrence", dueOn: date, anchorDay: 1 });
-  await da.insert(schema.reminderDelivery).values({ id: pushDelivery, householdId: home, userId: "a", kind: "maintenance", targetId: pushTask, dueOn: date, channel: "push" });
+  const pushTask = randomUUID(),
+    pushDelivery = randomUUID();
+  await da
+    .insert(schema.maintenance)
+    .values({
+      id: pushTask,
+      householdId: home,
+      title: "Push concurrence",
+      dueOn: date,
+      anchorDay: 1,
+    });
+  await da
+    .insert(schema.reminderDelivery)
+    .values({
+      id: pushDelivery,
+      householdId: home,
+      userId: "a",
+      kind: "maintenance",
+      targetId: pushTask,
+      dueOn: date,
+      channel: "push",
+    });
   const originalSend = webpush.sendNotification;
   const originalEnv = { ...process.env };
   const calls: string[] = [];
   let failed = false;
   try {
-    process.env.VAPID_PUBLIC_KEY = process.env.VAPID_PRIVATE_KEY = process.env.VAPID_SUBJECT = "local-mocked-provider";
+    process.env.VAPID_PUBLIC_KEY =
+      process.env.VAPID_PRIVATE_KEY =
+      process.env.VAPID_SUBJECT =
+        "local-mocked-provider";
     webpush.sendNotification = async (device) => {
       calls.push(device.endpoint);
-      if (device.endpoint.endsWith("bad") && !failed) { failed = true; throw Object.assign(Error("temporary"), { statusCode: 503 }); }
+      if (device.endpoint.endsWith("bad") && !failed) {
+        failed = true;
+        throw Object.assign(Error("temporary"), { statusCode: 503 });
+      }
       return { statusCode: 201, body: "", headers: {} };
     };
     await Promise.all([deliverReminder(da), deliverReminder(db)]);
-    assert.equal((await da.select().from(schema.reminderDelivery).where(eq(schema.reminderDelivery.id, pushDelivery)))[0].status, "failed");
-    assert.equal((await da.select().from(schema.pushReceipt).where(eq(schema.pushReceipt.deliveryId, pushDelivery))).filter((r) => r.status === "sent").length, 1);
-    await da.update(schema.reminderDelivery).set({ nextAttemptAt: new Date(0) }).where(eq(schema.reminderDelivery.id, pushDelivery));
+    assert.equal(
+      (
+        await da
+          .select()
+          .from(schema.reminderDelivery)
+          .where(eq(schema.reminderDelivery.id, pushDelivery))
+      )[0].status,
+      "failed",
+    );
+    assert.equal(
+      (
+        await da
+          .select()
+          .from(schema.pushReceipt)
+          .where(eq(schema.pushReceipt.deliveryId, pushDelivery))
+      ).filter((r) => r.status === "sent").length,
+      1,
+    );
+    await da
+      .update(schema.reminderDelivery)
+      .set({ nextAttemptAt: new Date(0) })
+      .where(eq(schema.reminderDelivery.id, pushDelivery));
     await Promise.all([deliverReminder(da), deliverReminder(db)]);
     assert.equal(calls.filter((e) => e.endsWith("good")).length, 1);
     assert.equal(calls.filter((e) => e.endsWith("bad")).length, 2);
-    assert.equal((await da.select().from(schema.reminderDelivery).where(eq(schema.reminderDelivery.id, pushDelivery)))[0].status, "sent");
+    assert.equal(
+      (
+        await da
+          .select()
+          .from(schema.reminderDelivery)
+          .where(eq(schema.reminderDelivery.id, pushDelivery))
+      )[0].status,
+      "sent",
+    );
   } finally {
     webpush.sendNotification = originalSend;
-    for (const key of ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"]) {
-      if (originalEnv[key] === undefined) delete process.env[key]; else process.env[key] = originalEnv[key];
+    for (const key of [
+      "VAPID_PUBLIC_KEY",
+      "VAPID_PRIVATE_KEY",
+      "VAPID_SUBJECT",
+    ]) {
+      if (originalEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = originalEnv[key];
     }
   }
+  const moved = randomUUID();
+  await da
+    .insert(schema.maintenance)
+    .values({
+      id: moved,
+      householdId: home,
+      title: "Déplacement concurrent",
+      dueOn: "2026-02-28",
+      frequency: "monthly",
+      anchorDay: 31,
+    });
+  const moves = await Promise.allSettled([
+    postponeTask(da, "a", home, moved, 0, "2026-03-04"),
+    postponeTask(db, "b", home, moved, 0, "2026-03-05"),
+  ]);
+  assert.equal(
+    moves.filter((result) => result.status === "fulfilled").length,
+    1,
+  );
+  const [movedTask] = await da
+    .select()
+    .from(schema.maintenance)
+    .where(eq(schema.maintenance.id, moved));
+  assert.equal(movedTask.revision, 1);
+  assert.equal(movedTask.anchorDay, 31);
   console.log(
-    "PostgreSQL réel : 9 scénarios de concurrence validés, deux connexions et deux membres.",
+    "PostgreSQL réel : 10 scénarios de concurrence validés, deux connexions et deux membres.",
   );
 } finally {
   await Promise.all(pools.map((p) => p.end()));

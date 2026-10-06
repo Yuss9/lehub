@@ -1,0 +1,13 @@
+# For Caddy/Traefik/Nginx already running in another Docker project.
+# Create PROXY_NETWORK first; database and worker remain on the private network.
+services:
+  app:
+    networks:
+      default:
+      proxy:
+        aliases:
+          - lehub-app
+networks:
+  proxy:
+    name: ${PROXY_NETWORK:-web}
+    external: true

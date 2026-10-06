@@ -11,6 +11,7 @@ import {
   changeEntity,
   completeTask,
   setShoppingChecked,
+  postponeTask,
 } from "@/lib/home-domain";
 import {
   dateSchema,
@@ -65,6 +66,65 @@ const appliance = {
   warrantyUntil: "2028-01-01",
 };
 describe("Modules du foyer", () => {
+  it("moves only the next occurrence, keeps its reference day and refuses stale, invalid or foreign moves", async () => {
+    await database
+      .insert(schema.maintenance)
+      .values({
+        id: "move-test",
+        householdId: "home",
+        title: "Filtre",
+        dueOn: "2026-02-28",
+        frequency: "monthly",
+        anchorDay: 31,
+      });
+    await postponeTask(
+      database,
+      "member",
+      "home",
+      "move-test",
+      0,
+      "2026-03-05",
+    );
+    const [task] = await database
+      .select()
+      .from(schema.maintenance)
+      .where(eq(schema.maintenance.id, "move-test"));
+    expect(task).toMatchObject({
+      dueOn: "2026-03-05",
+      anchorDay: 31,
+      revision: 1,
+    });
+    expect(
+      nextDue(task.dueOn, task.frequency, task.interval, task.anchorDay),
+    ).toBe("2026-04-30");
+    await expect(
+      postponeTask(database, "member", "home", "move-test", 0, "2026-04-01"),
+    ).rejects.toThrow("planning");
+    await expect(
+      postponeTask(database, "member", "home", "move-test", 1, "2026-02-30"),
+    ).rejects.toThrow();
+    await expect(
+      postponeTask(database, "outsider", "home", "move-test", 1, "2026-04-01"),
+    ).rejects.toThrow();
+    await database
+      .insert(schema.maintenance)
+      .values({
+        id: "foreign-task",
+        householdId: "foreign",
+        title: "Privé",
+        dueOn: "2026-03-05",
+        anchorDay: 5,
+      });
+    await expect(
+      postponeTask(database, "member", "home", "foreign-task", 0, "2026-04-01"),
+    ).rejects.toThrow("planning");
+    await database
+      .delete(schema.maintenance)
+      .where(eq(schema.maintenance.id, "move-test"));
+    await database
+      .delete(schema.maintenance)
+      .where(eq(schema.maintenance.id, "foreign-task"));
+  });
   it("creates and updates real household data and rejects foreign associations", async () => {
     await saveEntity(database, "member", "home", "room", "", {
       name: "Cuisine",

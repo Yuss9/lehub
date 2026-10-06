@@ -11,8 +11,10 @@
 
 Les modifications sont proposées dans une branche dédiée et une PR vers `main`. Le propriétaire révise et fusionne ; aucun pipeline ou déploiement automatique.
 
+6. **Installation et parcours quotidiens** : guide self-hosting complet, configurations Caddy/proxy, génération privée des secrets, recette réelle, rubriques de paramètres, journée complète du calendrier, déplacement protégé et double authentification TOTP avec codes de secours (migration 0007).
+
 ## Évolutions possibles
 
-- Glisser-déposer dans le calendrier.
+- Passkeys, intégrations domotiques et échanges de calendriers selon les usages.
 
 L’interface utilise exclusivement les données réelles de PostgreSQL. Aucun jeu de démonstration en production. Les limites actuelles et instructions de migration sont décrites dans HOME-MODULES.md et README.md.

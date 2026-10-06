@@ -25,6 +25,12 @@ export function LoginForm() {
             setError(
               "Email ou mot de passe incorrect, ou trop de tentatives. Réessaie dans un instant.",
             );
+          } else if (
+            result.data &&
+            "twoFactorRedirect" in result.data &&
+            result.data.twoFactorRedirect
+          ) {
+            router.push("/two-factor");
           } else {
             router.push("/");
             router.refresh();

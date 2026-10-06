@@ -400,7 +400,7 @@ export async function exerciseHome(page: Page, browser: Browser) {
     fullPage: true,
     animations: "disabled",
   });
-  await page.goto("/settings");
+  await page.goto("/settings?section=notifications");
   await page.getByLabel("Recevoir mes rappels par email").filter({ visible: true }).check();
   await page.getByLabel("Jours avant l’échéance").filter({ visible: true }).fill("14");
   await page
@@ -425,6 +425,7 @@ export async function exerciseHome(page: Page, browser: Browser) {
     fullPage: true,
     animations: "disabled",
   });
+  await page.goto("/settings");
   await page.getByText("Créer un autre foyer", { exact: true }).filter({ visible: true }).click();
   await page.getByLabel("Nom du nouveau foyer").filter({ visible: true }).fill("Maison secondaire");
   await page
@@ -462,6 +463,7 @@ export async function exerciseHome(page: Page, browser: Browser) {
   await page.goto("/shopping");
   await page.getByLabel("Nom de la liste", { exact: true }).filter({ visible: true }).fill("Second foyer");
   await page.getByRole("button", { name: "Créer la liste", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Second foyer", exact: true })).toBeVisible();
   await page.getByLabel("Conserver mes courses hors ligne sur cet appareil").filter({ visible: true }).check();
   await expect(page.getByText("Courses conservées sur cet appareil.", { exact: true }).filter({ visible: true })).toBeVisible();
   await page.context().setOffline(true);

@@ -1,9 +1,17 @@
 import { randomUUID, randomBytes } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, or, like } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 import { z } from "zod";
 import type { db as productionDb } from "@/db";
-import { passwordReset, user, account, session, rateLimit } from "@/db/schema";
+import {
+  passwordReset,
+  user,
+  account,
+  session,
+  rateLimit,
+  twoFactor,
+  verification,
+} from "@/db/schema";
 import { tokenHash, DomainError } from "./domain";
 export async function recoveryAllowed(
   database: typeof productionDb,
@@ -36,15 +44,44 @@ export async function issueReset(database: typeof productionDb, email: string) {
     .where(eq(user.email, email.trim().toLowerCase()));
   if (!person) return null;
   const token = randomBytes(32).toString("base64url");
-  await database
-    .insert(passwordReset)
-    .values({
-      id: randomUUID(),
-      userId: person.id,
-      tokenHash: tokenHash(token),
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-    });
+  await database.insert(passwordReset).values({
+    id: randomUUID(),
+    userId: person.id,
+    tokenHash: tokenHash(token),
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+  });
   return token;
+}
+/** Local operator recovery only; never exposed by an HTTP action or email reset. */
+export async function resetTwoFactor(
+  database: typeof productionDb,
+  email: string,
+) {
+  await database.transaction(async (tx) => {
+    const [person] = await tx
+      .select()
+      .from(user)
+      .where(eq(user.email, email.trim().toLowerCase()))
+      .for("update");
+    if (!person) throw new DomainError("Compte introuvable.");
+    await tx.delete(twoFactor).where(eq(twoFactor.userId, person.id));
+    await tx
+      .update(user)
+      .set({ twoFactorEnabled: false, updatedAt: new Date() })
+      .where(eq(user.id, person.id));
+    await tx.delete(session).where(eq(session.userId, person.id));
+    await tx
+      .delete(verification)
+      .where(
+        and(
+          eq(verification.value, person.id),
+          or(
+            like(verification.identifier, "2fa-%"),
+            like(verification.identifier, "trust-device-%"),
+          ),
+        ),
+      );
+  });
 }
 export async function resetPassword(
   database: typeof productionDb,
@@ -78,6 +115,17 @@ export async function resetPassword(
       .returning();
     if (!changed.length) throw new DomainError("Compte indisponible.");
     await tx.delete(session).where(eq(session.userId, reset.userId));
+    await tx
+      .delete(verification)
+      .where(
+        and(
+          eq(verification.value, reset.userId),
+          or(
+            like(verification.identifier, "2fa-%"),
+            like(verification.identifier, "trust-device-%"),
+          ),
+        ),
+      );
     await tx
       .delete(passwordReset)
       .where(eq(passwordReset.userId, reset.userId));
