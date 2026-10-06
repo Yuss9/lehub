@@ -158,6 +158,8 @@ Lire [AGENTS.md](AGENTS.md). Une branche dédiée et une PR vers `main` par lot,
 
 ### Parcours navigateur et captures
 
-Après `npm run build`, installer Chromium avec `npx playwright install chromium`, puis lancer `npm run test:e2e`. Les ports locaux 3000 et 54329 doivent être libres. Le script démarre le serveur **standalone de production** et une base PGlite éphémère dédiée, applique les migrations, teste les parcours et arrête les processus. Il ne réutilise pas la base de `.env`. Les identifiants `example.test` présents dans les tests sont fictifs et n’existent jamais dans l’installation normale.
+Après `npm run build`, installer Chromium avec `npx playwright install chromium`, puis lancer `npm run test:e2e`. Les ports locaux 3000, 3001 et 54329 doivent être libres. Le script démarre le serveur **standalone de production** et une base PGlite éphémère dédiée, applique les migrations, teste les parcours et arrête les processus. Il ne réutilise pas la base de `.env`. Les identifiants `example.test` présents dans les tests sont fictifs et n’existent jamais dans l’installation normale.
 
 Pour utiliser un navigateur déjà installé : `CHROMIUM_EXECUTABLE_PATH=/chemin/vers/chromium npm run test:e2e`. Les captures sont enregistrées dans `docs/screenshots/` avec les animations suspendues.
+
+Pour WebKit : `npx playwright install --with-deps webkit`, puis `LEHUB_BROWSER=webkit npm run test:e2e`. Les rechargements hors ligne coupent réellement le relais TCP local, avec contrôle de la réponse du service worker ; voir [RELIABILITY.md](docs/RELIABILITY.md). Aucun contrôle de panne n’est ajouté à l’application de production.

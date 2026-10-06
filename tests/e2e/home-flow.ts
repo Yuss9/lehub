@@ -1,5 +1,28 @@
 import AdmZip from "adm-zip";
 import { expect, type Page, type Browser } from "@playwright/test";
+async function reloadOffline(page: Page, browser: Browser) {
+  if (browser.browserType().name() !== "webkit") {
+    await page.reload();
+    return;
+  }
+  // Fail real network connections while retaining service-worker access. Do not
+  // skip the reload or accept an internal error as proof of offline persistence.
+  const control = process.env.E2E_OUTAGE_URL;
+  if (!control || !process.env.E2E_OUTAGE_TOKEN) throw Error("Lance les tests via npm run test:e2e.");
+  const outage = async (state: "offline" | "online") => {
+    const response = await fetch(`${control}/${state}`, { method: "POST", headers: { Authorization: `Bearer ${process.env.E2E_OUTAGE_TOKEN}` } });
+    expect(response.status).toBe(204);
+  };
+  await outage("offline");
+  try {
+    await page.context().setOffline(false);
+    const response = await page.reload();
+    expect(response?.fromServiceWorker()).toBe(true);
+  } finally {
+    await page.context().setOffline(true);
+    await outage("online");
+  }
+}
 export async function exerciseHome(page: Page, browser: Browser) {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/rooms");
@@ -77,8 +100,8 @@ export async function exerciseHome(page: Page, browser: Browser) {
     .getByRole("button", { name: "Ajouter la photo", exact: true })
     .click();
   await expect(page.getByRole("img", { name: "Photo appareil" })).toBeVisible();
-  expect(
-    await page
+  await expect.poll(async () =>
+    page
       .getByRole("img", { name: "Photo appareil" })
       .evaluate(
         (img: HTMLImageElement) => img.complete && img.naturalWidth > 0,
@@ -192,7 +215,7 @@ export async function exerciseHome(page: Page, browser: Browser) {
   await expect(
     page.getByText("1 × Pain hors ligne", { exact: true }).filter({ visible: true }),
   ).toBeVisible();
-  await page.reload();
+  await reloadOffline(page, browser);
   await expect(
     page.getByText("1 × Pain hors ligne", { exact: true }).filter({ visible: true }),
   ).toBeVisible();
@@ -227,6 +250,7 @@ export async function exerciseHome(page: Page, browser: Browser) {
   await page
     .getByRole("button", { name: "Retirer Pain hors ligne", exact: true })
     .click();
+  await expect(page.getByText("Courses à jour", { exact: false }).filter({ visible: true })).toBeVisible({ timeout: 20000 });
   await page
     .getByText("Articles retirés · annuler une suppression", { exact: true }).filter({ visible: true })
     .click();
@@ -258,7 +282,7 @@ export async function exerciseHome(page: Page, browser: Browser) {
       ).toBeVisible();
     }),
   );
-  await page.reload();
+  await reloadOffline(page, browser);
   await expect(page.getByText("1 × Onglet 1", { exact: true }).filter({ visible: true })).toBeVisible();
   await expect(page.getByText("1 × Onglet 2", { exact: true }).filter({ visible: true })).toBeVisible();
   await secondTab.close();
@@ -463,7 +487,36 @@ export async function exerciseHome(page: Page, browser: Browser) {
     .getByRole("button", { name: "Changer de foyer", exact: true })
     .click();
   await expect(page.getByText("Foyer sélectionné.", { exact: false }).filter({ visible: true })).toBeVisible();
+  // Hold the real IndexedDB opening callback through hydration. A fast click
+  // must not race the restoration of this household's existing offline cache.
+  await page.addInitScript(() => {
+    const key = "lehub-e2e-storage-released";
+    if (sessionStorage.getItem(key)) return;
+    const open = indexedDB.open.bind(indexedDB);
+    const success = Object.getOwnPropertyDescriptor(IDBRequest.prototype, "onsuccess")!;
+    let released = false;
+    const waiting: (() => void)[] = [];
+    indexedDB.open = (name, version) => {
+      const request = open(name, version);
+      Object.defineProperty(request, "onsuccess", {
+        get: () => success.get!.call(request),
+        set: (callback: ((this: IDBRequest, event: Event) => unknown) | null) => success.set!.call(request, (event: Event) => {
+          const deliver = () => callback?.call(request, event);
+          if (released) deliver(); else waiting.push(deliver);
+        }),
+      });
+      return request;
+    };
+    Object.assign(window, { releaseShoppingStorage() {
+      released = true;
+      sessionStorage.setItem(key, "true");
+      waiting.splice(0).forEach((deliver) => deliver());
+    } });
+  });
   await page.goto("/shopping");
+  await expect(page.getByLabel("Conserver mes courses hors ligne sur cet appareil").filter({ visible: true })).toBeDisabled();
+  await page.evaluate(() => (window as unknown as { releaseShoppingStorage: () => void }).releaseShoppingStorage());
+  await expect(page.getByLabel("Conserver mes courses hors ligne sur cet appareil").filter({ visible: true })).toBeEnabled();
   await page.getByLabel("Conserver mes courses hors ligne sur cet appareil").filter({ visible: true }).check();
   await expect(page.getByText("Courses conservées sur cet appareil.", { exact: true }).filter({ visible: true })).toBeVisible();
   await page.context().setOffline(true);

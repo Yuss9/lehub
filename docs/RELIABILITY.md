@@ -93,7 +93,7 @@ Il inclut désormais neuf scénarios de concurrence natifs : la trace d’une co
 
 Le même parcours automatisé peut utiliser WebKit après installation de son navigateur et de ses dépendances : `LEHUB_BROWSER=webkit npm run test:e2e`. WebKit sous Linux ne remplace pas la vérification sur un iPhone réel, notamment pour les notifications et l’installation.
 
-## Résultats de ce lot
+## Résultats initiaux (PR #5)
 
 - Lint, TypeScript et build de production : réussis.
 - 52 tests locaux dans neuf fichiers : réussis, notamment reçus push après échec partiel/réactivation, suppression de session, export/restauration de la trace, OCR par lots, alertes et corruption de copie distante.
@@ -101,3 +101,19 @@ Le même parcours automatisé peut utiliser WebKit après installation de son na
 - PostgreSQL/Docker : commande du harnais tentée, bloquée car `docker` n’est pas disponible. Les exécutions natives restent en attente.
 - WebKit : parcours tenté, bloqué car son navigateur n’est pas installé. Safari/iPhone réels restent en attente.
 - Aucun fournisseur SMTP/push, stockage distant ou relais d’alerte réel n’a été contacté. Les essais extérieurs nécessitent la configuration de l’instance et un appareil volontaire.
+
+## Validation complémentaire après fusion
+
+Le parcours WebKit Linux a été exécuté sur le build standalone : **réussi en 24,5 secondes**, sans erreur JavaScript non traitée. Il couvre la persistance après rechargement, deux onglets, les conflits par article, la confirmation d’effacement par foyer, la conservation des autres files, les corrections et les sessions/appareils. La capture `screenshots/webkit-account-access.png` montre la fiche d’accès à 390 px.
+
+L’émulation `setOffline(true)` de Playwright WebKit refuse certaines navigations pourtant servies par un service worker ([issue #42775](https://github.com/microsoft/playwright/issues/42775)). Le harnais ne saute pas ces étapes : pour les deux rechargements concernés, il coupe toutes les connexions au relais TCP local, réactive temporairement l’émulation réseau, puis exige une réponse provenant du service worker et retrouve les changements conservés. Il rétablit ensuite l’émulation hors ligne avant de réouvrir le relais. Le contrôle est lié à loopback, sur un port éphémère, avec un token généré pour le test ; tout est arrêté à la fin.
+
+Les menus de navigation, les liens entre échéances et historique et le retour depuis l’écran hors ligne demandent les pages à l’ouverture. Le préchargement automatique provoquait des erreurs de requêtes RSC annulées sous WebKit ; il est désactivé sur ces liens et évite également des lectures de pages privées inutilisées. La navigation au clic et les protections d’origine restent actives.
+
+La case de conservation attend maintenant la lecture initiale d’IndexedDB. Son activation compte comme une écriture en cours, reprend la file fusionnée retournée par le stockage et invalide les lectures précédentes. Une ancienne annonce ne peut plus remettre la case à zéro pendant l’activation. Le parcours retarde volontairement l’ouverture de la vraie base IndexedDB jusqu’au déblocage explicite, puis vérifie la restauration et la conservation des files des deux foyers.
+
+Les 52 tests locaux, lint, TypeScript et le build de production ont été relancés avec succès. Aucune nouvelle migration ni variable de production n’est nécessaire pour cette validation complémentaire.
+
+Le même parcours complet passe aussi sous Chromium Headless Shell (21,6 secondes). Les vérifications attendent le chargement effectif de la photo et la fin de la suppression synchronisée avant d’ouvrir son annulation ; elles ne confondent plus un élément visible avec un chargement terminé.
+
+PostgreSQL/Docker et `pg_dump/pg_restore` restent **non validés** : Docker est absent et l’environnement ne permet pas de lancer PostgreSQL sous un utilisateur distinct (`runuser: cannot set groups: Operation not permitted`). Aucun service fournisseur réel n’a été sollicité. Il faut encore l’URL et l’accès à une instance de test configurée, un destinataire volontaire et les appareils réels pour SMTP, push VAPID et Safari/iPhone. Le test PDF automatisé contrôle l’accès et les en-têtes de téléchargement/aperçu ; il ne valide pas le lecteur PDF natif d’un iPhone.
