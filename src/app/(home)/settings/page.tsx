@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { TwoFactorSettings } from "@/components/two-factor";
 import { and, eq, isNull, gt, desc, asc, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -31,68 +33,118 @@ import {
   removeAction,
   revokeAction,
 } from "@/app/actions";
-export default async function SettingsPage() {
+const settingsSections = [
+  ["household", "Foyer"],
+  ["account", "Compte et appareils"],
+  ["notifications", "Notifications"],
+  ["operations", "Exploitation"],
+] as const;
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ section?: string }>;
+}) {
+  const requested = (await searchParams).section;
+  const section =
+    settingsSections.find(([id]) => id === requested)?.[0] || "household";
   const context = await getContext();
-  const [preference] = await db
-    .select()
-    .from(reminderPreference)
-    .where(
-      and(
-        eq(reminderPreference.householdId, context.household.id),
-        eq(reminderPreference.userId, context.user.id),
-      ),
-    );
+  const [preference] =
+    section === "notifications"
+      ? await db
+          .select()
+          .from(reminderPreference)
+          .where(
+            and(
+              eq(reminderPreference.householdId, context.household.id),
+              eq(reminderPreference.userId, context.user.id),
+            ),
+          )
+      : [];
   const isAdmin = context.membership.role === "admin";
-  const accessData = await accountAccessData(context.user.id);
-  const members = await db
-    .select({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: membership.role,
-    })
-    .from(membership)
-    .innerJoin(user, eq(user.id, membership.userId))
-    .where(eq(membership.householdId, context.household.id));
-  const invites = isAdmin
+  const accessData =
+    section === "account" ? await accountAccessData(context.user.id) : null;
+  const members =
+    section === "household"
+      ? await db
+          .select({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: membership.role,
+          })
+          .from(membership)
+          .innerJoin(user, eq(user.id, membership.userId))
+          .where(eq(membership.householdId, context.household.id))
+      : [];
+  const invites =
+    isAdmin && section === "household"
+      ? await db
+          .select()
+          .from(invitation)
+          .where(
+            and(
+              eq(invitation.householdId, context.household.id),
+              isNull(invitation.acceptedAt),
+              isNull(invitation.revokedAt),
+              gt(invitation.expiresAt, new Date()),
+            ),
+          )
+          .orderBy(desc(invitation.createdAt))
+      : [];
+  const homes =
+    section === "household"
+      ? await db
+          .select({ id: household.id, name: household.name })
+          .from(membership)
+          .innerJoin(household, eq(household.id, membership.householdId))
+          .where(eq(membership.userId, context.user.id))
+          .orderBy(asc(membership.createdAt), asc(household.id))
+      : [];
+  const workers =
+    isAdmin && section === "operations"
+      ? await db.select().from(workerState)
+      : [];
+  const deliveries =
+    isAdmin && section === "operations"
+      ? await db
+          .select({
+            id: reminderDelivery.id,
+            kind: reminderDelivery.kind,
+            channel: reminderDelivery.channel,
+            status: reminderDelivery.status,
+            attempts: reminderDelivery.attempts,
+            dueOn: reminderDelivery.dueOn,
+            lastError: reminderDelivery.lastError,
+            updatedAt: reminderDelivery.updatedAt,
+          })
+          .from(reminderDelivery)
+          .where(eq(reminderDelivery.householdId, context.household.id))
+          .orderBy(desc(reminderDelivery.updatedAt))
+          .limit(30)
+      : [];
+  const deviceResults = deliveries.length
     ? await db
-      .select()
-      .from(invitation)
-      .where(
-        and(
-          eq(invitation.householdId, context.household.id),
-          isNull(invitation.acceptedAt),
-          isNull(invitation.revokedAt),
-          gt(invitation.expiresAt, new Date()),
-        ),
-      )
-      .orderBy(desc(invitation.createdAt))
+        .select({
+          deliveryId: pushReceipt.deliveryId,
+          status: pushReceipt.status,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(pushReceipt)
+        .innerJoin(
+          reminderDelivery,
+          eq(reminderDelivery.id, pushReceipt.deliveryId),
+        )
+        .where(
+          and(
+            eq(reminderDelivery.householdId, context.household.id),
+            inArray(
+              pushReceipt.deliveryId,
+              deliveries.map((d) => d.id),
+            ),
+          ),
+        )
+        .groupBy(pushReceipt.deliveryId, pushReceipt.status)
     : [];
-  const homes = await db
-    .select({ id: household.id, name: household.name })
-    .from(membership)
-    .innerJoin(household, eq(household.id, membership.householdId))
-    .where(eq(membership.userId, context.user.id))
-    .orderBy(asc(membership.createdAt), asc(household.id));
-  const workers = isAdmin ? await db.select().from(workerState) : [];
-  const deliveries = isAdmin
-    ? await db
-      .select({
-        id: reminderDelivery.id,
-        kind: reminderDelivery.kind,
-        channel: reminderDelivery.channel,
-        status: reminderDelivery.status,
-        attempts: reminderDelivery.attempts,
-        dueOn: reminderDelivery.dueOn,
-        lastError: reminderDelivery.lastError,
-        updatedAt: reminderDelivery.updatedAt,
-      })
-      .from(reminderDelivery)
-      .where(eq(reminderDelivery.householdId, context.household.id))
-      .orderBy(desc(reminderDelivery.updatedAt))
-      .limit(30)
-    : [];
-  const deviceResults = deliveries.length ? await db.select({ deliveryId: pushReceipt.deliveryId, status: pushReceipt.status, count: sql<number>`count(*)::int` }).from(pushReceipt).innerJoin(reminderDelivery, eq(reminderDelivery.id, pushReceipt.deliveryId)).where(and(eq(reminderDelivery.householdId, context.household.id), inArray(pushReceipt.deliveryId, deliveries.map((d) => d.id)))).groupBy(pushReceipt.deliveryId, pushReceipt.status) : [];
   return (
     <>
       <p className="eyebrow">COMME TU L’AIMES</p>
@@ -100,379 +152,437 @@ export default async function SettingsPage() {
       <p className="mt-3 text-sm text-muted-foreground">
         Les détails qui font de cet espace le tien.
       </p>
-      <div className="mt-9 grid items-start gap-6 xl:grid-cols-2">
-        <div className="space-y-6">
-          <section className="panel space-y-4">
-            <h2 className="text-lg font-semibold">Mes foyers</h2>
-            <MutationForm
-              action={householdSelectAction}
-              label="Changer de foyer"
-            >
-              <label className="block text-sm">
-                Foyer actif
-                <select
-                  name="householdId"
-                  aria-label="Foyer actif"
-                  defaultValue={context.household.id}
-                  className="mt-2 min-h-11 w-full rounded-xl border bg-surface px-3"
-                >
-                  {homes.map((h) => (
-                    <option key={h.id} value={h.id}>
-                      {h.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className="text-xs text-muted-foreground">
-                Synchronise les courses en attente avant de changer de foyer.
-                Les formulaires ouverts dans les autres onglets devront être
-                actualisés.
-              </p>
-            </MutationForm>
-            <details>
-              <summary className="min-h-11 cursor-pointer py-3 text-sm text-primary">
-                Créer un autre foyer
-              </summary>
-              <MutationForm
-                action={householdCreateAction}
-                label="Créer le foyer"
-              >
-                <Field
-                  label="Nom du nouveau foyer"
-                  name="name"
-                  required
-                  maxLength={80}
-                />
-                <Field
-                  label="Devise du nouveau foyer"
-                  name="currency"
-                  defaultValue="EUR"
-                  required
-                  maxLength={3}
-                />
-                <Field
-                  label="Fuseau du nouveau foyer"
-                  name="timezone"
-                  defaultValue="Europe/Paris"
-                  required
-                  maxLength={100}
-                />
-              </MutationForm>
-            </details>
-          </section>
-          <section className="panel">
-            <h2 className="mb-1 text-lg font-semibold">Le foyer</h2>
-            <p className="mb-6 text-xs leading-6 text-muted-foreground">
-              {isAdmin
-                ? "Le nom et les préférences communes à tous les membres."
-                : "Seul un administrateur peut modifier ces préférences."}
-            </p>
-            {isAdmin ? (
-              <MutationForm action={householdAction} label="Enregistrer">
-                <input
-                  type="hidden"
-                  name="revision"
-                  value={context.household.revision}
-                />
-                <Field
-                  label="Nom du foyer"
-                  name="name"
-                  required
-                  defaultValue={context.household.name}
-                  maxLength={80}
-                />
-                <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
-                  <Field
-                    label="Devise"
-                    name="currency"
-                    required
-                    defaultValue={context.household.currency}
-                    maxLength={3}
-                    hint="Code ISO : EUR, CHF, TRY…"
-                  />
-                  <Field
-                    label="Fuseau horaire"
-                    name="timezone"
-                    required
-                    defaultValue={context.household.timezone}
-                    maxLength={100}
-                    hint="Exemple : Europe/Paris"
-                  />
-                </div>
-              </MutationForm>
-            ) : (
-              <dl className="space-y-3 text-sm">
-                <div>
-                  <dt className="text-muted-foreground">Nom</dt>
-                  <dd>{context.household.name}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">
-                    Devise et fuseau horaire
-                  </dt>
-                  <dd>
-                    {context.household.currency} · {context.household.timezone}
-                  </dd>
-                </div>
-              </dl>
-            )}
-          </section>
-          <section className="panel">
-            <h2 className="mb-2 text-lg font-semibold">Apparence</h2>
-            <p className="mb-5 text-xs text-muted-foreground">
-              Ton choix est conservé sur cet appareil.
-            </p>
-            <ThemeControl />
-          </section>
-          <section className="panel">
-            <h2 className="mb-4 text-lg font-semibold">Mes rappels</h2>
-            <p className="mb-5 text-xs text-muted-foreground">
-              Entretiens et fins de garantie, une fois par échéance.{" "}
-              {mailConfigured()
-                ? "Envoyés à ton adresse email."
-                : "L’administrateur doit configurer l’envoi d’emails pour activer la distribution."}
-            </p>
-            <MutationForm
-              action={reminderAction}
-              label="Enregistrer les rappels"
-            >
-              <label className="flex items-center gap-3 text-sm">
-                <input
-                  name="emailEnabled"
-                  type="checkbox"
-                  defaultChecked={preference?.emailEnabled || false}
-                />
-                Recevoir mes rappels par email
-              </label>
-              <Field
-                label="Jours avant l’échéance"
-                name="leadDays"
-                type="number"
-                min={0}
-                max={90}
-                defaultValue={preference?.leadDays ?? 7}
-              />
-            </MutationForm>
-          </section>
-          <AccountAccess data={accessData} currentSession={context.session.id} timezone={context.household.timezone} />
-          <section className="panel">
-            <h2 className="mb-4 text-lg font-semibold">Sur mon téléphone</h2>
-            <InstallApp />
-            <div className="mt-6">
-              <PushControls scope={context.household.id} />
-            </div>
-          </section>
-          <section className="panel">
-            <h2 className="mb-4 text-lg font-semibold">
-              Sauvegarde et restauration
-            </h2>
-            <BackupControls admin={isAdmin} />
-          </section>
-          {isAdmin && (
+      <nav
+        aria-label="Rubriques des paramètres"
+        className="mt-7 grid grid-cols-2 gap-2 rounded-2xl border bg-surface p-2 sm:grid-cols-4"
+      >
+        {settingsSections.map(([id, label]) => (
+          <Link
+            key={id}
+            prefetch={false}
+            href={`/settings?section=${id}`}
+            aria-current={section === id ? "page" : undefined}
+            className="flex min-h-11 items-center justify-center rounded-xl px-3 text-sm transition-colors hover:bg-muted aria-[current=page]:bg-primary/10 aria-[current=page]:text-primary"
+          >
+            {label}
+          </Link>
+        ))}
+      </nav>
+      <div className="mt-7 grid items-start gap-6 xl:grid-cols-2">
+        {section === "household" && (
+          <>
             <section className="panel space-y-4">
-              <h2 className="text-lg font-semibold">Worker et distribution</h2>
-              {!workers.length && (
-                <p className="text-sm text-danger">
-                  Aucun worker observé. Démarre le service worker.
+              <h2 className="text-lg font-semibold">Mes foyers</h2>
+              <MutationForm
+                action={householdSelectAction}
+                label="Changer de foyer"
+              >
+                <label className="block text-sm">
+                  Foyer actif
+                  <select
+                    name="householdId"
+                    aria-label="Foyer actif"
+                    defaultValue={context.household.id}
+                    className="mt-2 min-h-11 w-full rounded-xl border bg-surface px-3"
+                  >
+                    {homes.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Synchronise les courses en attente avant de changer de foyer.
+                  Les formulaires ouverts dans les autres onglets devront être
+                  actualisés.
                 </p>
+              </MutationForm>
+              <details>
+                <summary className="min-h-11 cursor-pointer py-3 text-sm text-primary">
+                  Créer un autre foyer
+                </summary>
+                <MutationForm
+                  action={householdCreateAction}
+                  label="Créer le foyer"
+                >
+                  <Field
+                    label="Nom du nouveau foyer"
+                    name="name"
+                    required
+                    maxLength={80}
+                  />
+                  <Field
+                    label="Devise du nouveau foyer"
+                    name="currency"
+                    defaultValue="EUR"
+                    required
+                    maxLength={3}
+                  />
+                  <Field
+                    label="Fuseau du nouveau foyer"
+                    name="timezone"
+                    defaultValue="Europe/Paris"
+                    required
+                    maxLength={100}
+                  />
+                </MutationForm>
+              </details>
+            </section>
+            <section className="panel">
+              <h2 className="mb-1 text-lg font-semibold">Le foyer</h2>
+              <p className="mb-6 text-xs leading-6 text-muted-foreground">
+                {isAdmin
+                  ? "Le nom et les préférences communes à tous les membres."
+                  : "Seul un administrateur peut modifier ces préférences."}
+              </p>
+              {isAdmin ? (
+                <MutationForm action={householdAction} label="Enregistrer">
+                  <input
+                    type="hidden"
+                    name="revision"
+                    value={context.household.revision}
+                  />
+                  <Field
+                    label="Nom du foyer"
+                    name="name"
+                    required
+                    defaultValue={context.household.name}
+                    maxLength={80}
+                  />
+                  <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
+                    <Field
+                      label="Devise"
+                      name="currency"
+                      required
+                      defaultValue={context.household.currency}
+                      maxLength={3}
+                      hint="Code ISO : EUR, CHF, TRY…"
+                    />
+                    <Field
+                      label="Fuseau horaire"
+                      name="timezone"
+                      required
+                      defaultValue={context.household.timezone}
+                      maxLength={100}
+                      hint="Exemple : Europe/Paris"
+                    />
+                  </div>
+                </MutationForm>
+              ) : (
+                <dl className="space-y-3 text-sm">
+                  <div>
+                    <dt className="text-muted-foreground">Nom</dt>
+                    <dd>{context.household.name}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">
+                      Devise et fuseau horaire
+                    </dt>
+                    <dd>
+                      {context.household.currency} ·{" "}
+                      {context.household.timezone}
+                    </dd>
+                  </div>
+                </dl>
               )}
-              {workers.map((w) => (
-                <div key={w.id} className="rounded-xl border p-3 text-sm">
-                  <p>
-                    {w.id} ·{" "}
-                    {workerHealth(w) === "ok" ? "Actif" : workerHealth(w) === "error" ? "En échec" : "Sans cycle récent"}
+            </section>
+            <section className="panel">
+              <h2 className="text-lg font-semibold">En bonne compagnie</h2>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Les personnes qui partagent ce foyer.
+              </p>
+              <ul className="my-6 divide-y divide-border">
+                {members.map((member) => (
+                  <li
+                    key={member.id}
+                    className="flex flex-wrap items-center justify-between gap-2 py-4"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">
+                        {member.name}
+                        {member.id === context.user.id && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            toi
+                          </span>
+                        )}
+                      </p>
+                      <p className="mt-1 break-all text-xs text-muted-foreground">
+                        {member.email}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {member.role === "admin" ? "Administrateur" : "Membre"}
+                      </p>
+                    </div>
+                    {isAdmin && (
+                      <MutationForm
+                        compact
+                        action={memberRoleAction}
+                        label={
+                          member.role === "admin"
+                            ? "Passer membre"
+                            : "Nommer administrateur"
+                        }
+                        confirmation={`Changer le rôle de ${member.name} ?`}
+                      >
+                        <input type="hidden" name="userId" value={member.id} />
+                        <input
+                          type="hidden"
+                          name="role"
+                          value={member.role === "admin" ? "member" : "admin"}
+                        />
+                      </MutationForm>
+                    )}
+                    {isAdmin && member.id !== context.user.id && (
+                      <MutationForm
+                        compact
+                        action={removeAction}
+                        label="Retirer"
+                        confirmation={`Retirer ${member.name} du foyer ? Son accès sera supprimé immédiatement.`}
+                      >
+                        <input type="hidden" name="userId" value={member.id} />
+                      </MutationForm>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {isAdmin && (
+                <>
+                  <div className="border-t border-border pt-6">
+                    <h3 className="mb-2 text-sm font-semibold">
+                      Inviter un membre
+                    </h3>
+                    <p className="mb-5 text-xs leading-6 text-muted-foreground">
+                      Un lien valable 48 heures, à transmettre toi-même. Aucun
+                      email n’est envoyé.
+                    </p>
+                    <MutationForm
+                      action={inviteAction}
+                      label="Créer un lien d’invitation"
+                    >
+                      <Field
+                        label="Adresse email du membre"
+                        name="email"
+                        type="email"
+                        required
+                        maxLength={254}
+                      />
+                    </MutationForm>
+                  </div>
+                  {invites.length > 0 && (
+                    <div className="mt-8 border-t border-border pt-6">
+                      <h3 className="text-sm font-semibold">
+                        Invitations en attente
+                      </h3>
+                      <ul className="divide-y divide-border">
+                        {invites.map((invite) => (
+                          <li key={invite.id} className="py-4">
+                            <p className="break-all text-sm">{invite.email}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Expire le{" "}
+                              {new Intl.DateTimeFormat("fr-FR", {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                                timeZone: context.household.timezone,
+                              }).format(invite.expiresAt)}
+                            </p>
+                            <MutationForm
+                              compact
+                              action={revokeAction}
+                              label="Révoquer"
+                              confirmation="Révoquer ce lien d’invitation ?"
+                            >
+                              <input
+                                type="hidden"
+                                name="id"
+                                value={invite.id}
+                              />
+                            </MutationForm>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          </>
+        )}
+        {section === "account" && (
+          <>
+            <section className="panel">
+              <h2 className="mb-2 text-lg font-semibold">Apparence</h2>
+              <p className="mb-5 text-xs text-muted-foreground">
+                Ton choix est conservé sur cet appareil.
+              </p>
+              <ThemeControl />
+            </section>
+            <AccountAccess
+              data={accessData!}
+              currentSession={context.session.id}
+              timezone={context.household.timezone}
+            />
+            <section className="panel">
+              <h2 className="mb-2 text-lg font-semibold">Sécurité</h2>
+              <p className="mb-6 break-all text-xs text-muted-foreground">
+                Connecté avec {context.user.email}
+              </p>
+              <PasswordForm />
+            </section>
+            <TwoFactorSettings enabled={!!context.user.twoFactorEnabled} />
+          </>
+        )}
+        {section === "notifications" && (
+          <>
+            <section className="panel">
+              <h2 className="mb-4 text-lg font-semibold">Mes rappels</h2>
+              <p className="mb-5 text-xs text-muted-foreground">
+                Entretiens et fins de garantie, une fois par échéance.{" "}
+                {mailConfigured()
+                  ? "Envoyés à ton adresse email."
+                  : "L’administrateur doit configurer l’envoi d’emails pour activer la distribution."}
+              </p>
+              <MutationForm
+                action={reminderAction}
+                label="Enregistrer les rappels"
+              >
+                <label className="flex items-center gap-3 text-sm">
+                  <input
+                    name="emailEnabled"
+                    type="checkbox"
+                    defaultChecked={preference?.emailEnabled || false}
+                  />
+                  Recevoir mes rappels par email
+                </label>
+                <Field
+                  label="Jours avant l’échéance"
+                  name="leadDays"
+                  type="number"
+                  min={0}
+                  max={90}
+                  defaultValue={preference?.leadDays ?? 7}
+                />
+              </MutationForm>
+            </section>
+            <section className="panel">
+              <h2 className="mb-4 text-lg font-semibold">Sur mon téléphone</h2>
+              <InstallApp />
+              <div className="mt-6">
+                <PushControls scope={context.household.id} />
+              </div>
+            </section>
+          </>
+        )}
+        {section === "operations" && (
+          <>
+            <section className="panel">
+              <h2 className="mb-4 text-lg font-semibold">
+                Sauvegarde et restauration
+              </h2>
+              <BackupControls admin={isAdmin} />
+            </section>
+            {isAdmin && (
+              <section className="panel space-y-4">
+                <h2 className="text-lg font-semibold">
+                  Worker et distribution
+                </h2>
+                {!workers.length && (
+                  <p className="text-sm text-danger">
+                    Aucun worker observé. Démarre le service worker.
                   </p>
-                  <p className="mt-2 text-xs">
-                    Dernier signal :{" "}
-                    {w.heartbeatAt.toLocaleString("fr-FR", {
-                      timeZone: context.household.timezone,
-                    })}
-                  </p>
-                  {w.completedAt && (
-                    <p className="text-xs">
-                      Dernier cycle réussi :{" "}
-                      {w.completedAt.toLocaleString("fr-FR", {
+                )}
+                {workers.map((w) => (
+                  <div key={w.id} className="rounded-xl border p-3 text-sm">
+                    <p>
+                      {w.id} ·{" "}
+                      {workerHealth(w) === "ok"
+                        ? "Actif"
+                        : workerHealth(w) === "error"
+                          ? "En échec"
+                          : "Sans cycle récent"}
+                    </p>
+                    <p className="mt-2 text-xs">
+                      Dernier signal :{" "}
+                      {w.heartbeatAt.toLocaleString("fr-FR", {
                         timeZone: context.household.timezone,
                       })}
                     </p>
-                  )}
-                  {w.lastError && (
-                    <p role="alert" className="mt-2 text-danger">
-                      {w.lastError}
-                    </p>
-                  )}
-                </div>
-              ))}
-              <MutationForm
-                compact
-                action={operationsAction}
-                label="Envoyer un email de test à mon adresse"
-              >
-                <input type="hidden" name="operation" value="smtp" />
-              </MutationForm>
-              <h3 className="font-semibold">30 derniers rappels du foyer</h3>
-              {!deliveries.length && (
-                <p className="text-sm text-muted-foreground">
-                  Aucun rappel distribué pour le moment.
-                </p>
-              )}
-              {deliveries.map((d) => (
-                <div key={d.id} className="rounded-xl border p-3 text-sm">
-                  <p>
-                    {d.channel === "push" ? "Push" : "Email"} ·{" "}
-                    {d.kind === "maintenance" ? "Entretien" : "Garantie"} ·{" "}
-                    {d.dueOn}
-                  </p>
-                  <p className="mt-2">
-                    {{
-                      sent: "Envoyé",
-                      pending: "En attente",
-                      failed: "Échec",
-                      cancelled: "Annulé",
-                    }[d.status] || d.status}{" "}
-                    · {d.attempts}/5 tentative(s)
-                  </p>
-                  {d.channel === "push" && <p className="mt-2 text-xs text-muted-foreground">Appareils : {deviceResults.filter((r) => r.deliveryId === d.id).map((r) => `${r.count} ${{ sent: "envoyé(s)", failed: "en échec", expired: "expiré(s)" }[r.status] || r.status}`).join(" · ") || "En attente"}. Les appareils déjà servis ne sont pas relancés.</p>}
-                  {d.lastError && (
-                    <p className="mt-2 text-xs text-danger">{d.lastError}</p>
-                  )}
-                  {d.status === "failed" && (
-                    <MutationForm
-                      compact
-                      action={operationsAction}
-                      label="Relancer ce rappel"
-                    >
-                      <input type="hidden" name="operation" value="retry" />
-                      <input type="hidden" name="id" value={d.id} />
-                    </MutationForm>
-                  )}
-                </div>
-              ))}
-            </section>
-          )}
-          <section className="panel">
-            <h2 className="mb-2 text-lg font-semibold">Sécurité</h2>
-            <p className="mb-6 break-all text-xs text-muted-foreground">
-              Connecté avec {context.user.email}
-            </p>
-            <PasswordForm />
-          </section>
-        </div>
-        <section className="panel">
-          <h2 className="text-lg font-semibold">En bonne compagnie</h2>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Les personnes qui partagent ce foyer.
-          </p>
-          <ul className="my-6 divide-y divide-border">
-            {members.map((member) => (
-              <li
-                key={member.id}
-                className="flex flex-wrap items-center justify-between gap-2 py-4"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">
-                    {member.name}
-                    {member.id === context.user.id && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        toi
-                      </span>
+                    {w.completedAt && (
+                      <p className="text-xs">
+                        Dernier cycle réussi :{" "}
+                        {w.completedAt.toLocaleString("fr-FR", {
+                          timeZone: context.household.timezone,
+                        })}
+                      </p>
                     )}
-                  </p>
-                  <p className="mt-1 break-all text-xs text-muted-foreground">
-                    {member.email}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {member.role === "admin" ? "Administrateur" : "Membre"}
-                  </p>
-                </div>
-                {isAdmin && (
-                  <MutationForm
-                    compact
-                    action={memberRoleAction}
-                    label={
-                      member.role === "admin"
-                        ? "Passer membre"
-                        : "Nommer administrateur"
-                    }
-                    confirmation={`Changer le rôle de ${member.name} ?`}
-                  >
-                    <input type="hidden" name="userId" value={member.id} />
-                    <input
-                      type="hidden"
-                      name="role"
-                      value={member.role === "admin" ? "member" : "admin"}
-                    />
-                  </MutationForm>
-                )}
-                {isAdmin && member.id !== context.user.id && (
-                  <MutationForm
-                    compact
-                    action={removeAction}
-                    label="Retirer"
-                    confirmation={`Retirer ${member.name} du foyer ? Son accès sera supprimé immédiatement.`}
-                  >
-                    <input type="hidden" name="userId" value={member.id} />
-                  </MutationForm>
-                )}
-              </li>
-            ))}
-          </ul>
-          {isAdmin && (
-            <>
-              <div className="border-t border-border pt-6">
-                <h3 className="mb-2 text-sm font-semibold">
-                  Inviter un membre
-                </h3>
-                <p className="mb-5 text-xs leading-6 text-muted-foreground">
-                  Un lien valable 48 heures, à transmettre toi-même. Aucun email
-                  n’est envoyé.
-                </p>
+                    {w.lastError && (
+                      <p role="alert" className="mt-2 text-danger">
+                        {w.lastError}
+                      </p>
+                    )}
+                  </div>
+                ))}
                 <MutationForm
-                  action={inviteAction}
-                  label="Créer un lien d’invitation"
+                  compact
+                  action={operationsAction}
+                  label="Envoyer un email de test à mon adresse"
                 >
-                  <Field
-                    label="Adresse email du membre"
-                    name="email"
-                    type="email"
-                    required
-                    maxLength={254}
-                  />
+                  <input type="hidden" name="operation" value="smtp" />
                 </MutationForm>
-              </div>
-              {invites.length > 0 && (
-                <div className="mt-8 border-t border-border pt-6">
-                  <h3 className="text-sm font-semibold">
-                    Invitations en attente
-                  </h3>
-                  <ul className="divide-y divide-border">
-                    {invites.map((invite) => (
-                      <li key={invite.id} className="py-4">
-                        <p className="break-all text-sm">{invite.email}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Expire le{" "}
-                          {new Intl.DateTimeFormat("fr-FR", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                            timeZone: context.household.timezone,
-                          }).format(invite.expiresAt)}
-                        </p>
-                        <MutationForm
-                          compact
-                          action={revokeAction}
-                          label="Révoquer"
-                          confirmation="Révoquer ce lien d’invitation ?"
-                        >
-                          <input type="hidden" name="id" value={invite.id} />
-                        </MutationForm>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
-          )}
-        </section>
+                <h3 className="font-semibold">30 derniers rappels du foyer</h3>
+                {!deliveries.length && (
+                  <p className="text-sm text-muted-foreground">
+                    Aucun rappel distribué pour le moment.
+                  </p>
+                )}
+                {deliveries.map((d) => (
+                  <div key={d.id} className="rounded-xl border p-3 text-sm">
+                    <p>
+                      {d.channel === "push" ? "Push" : "Email"} ·{" "}
+                      {d.kind === "maintenance" ? "Entretien" : "Garantie"} ·{" "}
+                      {d.dueOn}
+                    </p>
+                    <p className="mt-2">
+                      {{
+                        sent: "Envoyé",
+                        pending: "En attente",
+                        failed: "Échec",
+                        cancelled: "Annulé",
+                      }[d.status] || d.status}{" "}
+                      · {d.attempts}/5 tentative(s)
+                    </p>
+                    {d.channel === "push" && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Appareils :{" "}
+                        {deviceResults
+                          .filter((r) => r.deliveryId === d.id)
+                          .map(
+                            (r) =>
+                              `${r.count} ${{ sent: "envoyé(s)", failed: "en échec", expired: "expiré(s)" }[r.status] || r.status}`,
+                          )
+                          .join(" · ") || "En attente"}
+                        . Les appareils déjà servis ne sont pas relancés.
+                      </p>
+                    )}
+                    {d.lastError && (
+                      <p className="mt-2 text-xs text-danger">{d.lastError}</p>
+                    )}
+                    {d.status === "failed" && (
+                      <MutationForm
+                        compact
+                        action={operationsAction}
+                        label="Relancer ce rappel"
+                      >
+                        <input type="hidden" name="operation" value="retry" />
+                        <input type="hidden" name="id" value={d.id} />
+                      </MutationForm>
+                    )}
+                  </div>
+                ))}
+              </section>
+            )}
+          </>
+        )}
       </div>
     </>
   );

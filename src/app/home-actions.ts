@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { and, eq, sql, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { document, maintenance, reminderPreference } from "@/db/schema";
+import { document, reminderPreference } from "@/db/schema";
 import { formContext } from "@/lib/context";
 import {
   saveEntity,
@@ -12,10 +12,10 @@ import {
   setShoppingChecked,
   clearPurchased,
   recordPastIntervention,
+  postponeTask,
 } from "@/lib/home-domain";
 import { uploadDocument, replaceDocument } from "@/lib/document-domain";
 import { DomainError } from "@/lib/domain";
-import { dateSchema } from "@/lib/recurrence";
 import { revisionSchema } from "@/lib/value-schemas";
 import type { ActionState } from "./actions";
 export async function homeAction(
@@ -138,21 +138,14 @@ export async function homeAction(
         },
       );
     } else if (operation === "postpone" && entity === "maintenance") {
-      const dueOn = dateSchema.parse(form.get("dueOn"));
-      const changed = await db
-        .update(maintenance)
-        .set({ dueOn, revision: sql`${maintenance.revision} + 1` })
-        .where(
-          and(
-            eq(maintenance.id, id),
-            eq(maintenance.householdId, context.household.id),
-            eq(maintenance.revision, revisionSchema.parse(revision)),
-            eq(maintenance.archived, false),
-          ),
-        )
-        .returning();
-      if (!changed.length)
-        throw new DomainError("Le planning a changé. Actualise la page.");
+      await postponeTask(
+        db,
+        context.user.id,
+        context.household.id,
+        id,
+        revision,
+        form.get("dueOn"),
+      );
     } else if (operation === "checked" && entity === "shoppingItem") {
       const checked =
         z.enum(["true", "false"]).parse(form.get("checked")) === "true";

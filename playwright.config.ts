@@ -4,13 +4,18 @@ export default defineConfig({
   workers: 1,
   use: {
     locale: "fr-FR",
+    actionTimeout: 15000,
+    navigationTimeout: 30000,
     contextOptions: { reducedMotion: "reduce" },
     baseURL: "http://localhost:3000",
     viewport: { width: 1440, height: 1000 },
     browserName: process.env.LEHUB_BROWSER === "webkit" ? "webkit" : "chromium",
-    launchOptions: process.env.LEHUB_BROWSER === "webkit" ? {} : {
-      executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
-      args: ["--no-sandbox"],
-    },
+    launchOptions:
+      process.env.LEHUB_BROWSER === "webkit"
+        ? {}
+        : {
+            executablePath: process.env.CHROMIUM_EXECUTABLE_PATH,
+            args: ["--no-sandbox"],
+          },
   },
 });

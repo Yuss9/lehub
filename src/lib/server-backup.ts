@@ -78,7 +78,7 @@ type Manifest = {
   files: { key: string; sha256: string; size: number }[];
 };
 const TABLES = [
-  "user", "session", "account", "verification", "rate_limit",
+  "user", "two_factor", "session", "account", "verification", "rate_limit",
   "household", "membership", "installation", "invitation", "room",
   "document", "equipment", "maintenance", "intervention", "intervention_correction",
   "shopping_list", "shopping_item", "password_reset", "reminder_preference",

@@ -128,7 +128,7 @@ export default async function MaintenancePage({
         </>
       )}
       {!historyView && (
-        <Calendar month={month} tasks={calendarTasks} current={current} />
+        <Calendar month={month} tasks={calendarTasks} current={current} scope={household.id} />
       )}
       {!historyView && (
         <>

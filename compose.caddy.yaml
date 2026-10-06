@@ -1,0 +1,21 @@
+# Same project as compose.yaml: Caddy reaches app through the default network.
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      LEHUB_DOMAIN: ${LEHUB_DOMAIN:?Set LEHUB_DOMAIN to the public hostname}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+volumes:
+  caddy_data:
+  caddy_config:
