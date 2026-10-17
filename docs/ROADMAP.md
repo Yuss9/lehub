@@ -9,7 +9,7 @@
 
 5. **Fiabilité des appareils et exploitation** : désactivation hors ligne par foyer avec confirmation atomique, abonnements push liés aux sessions, reçus par appareil, révocation d’accès, traces des corrections, lots OCR, copie distante vérifiée et surveillance indépendante. Voir [RELIABILITY.md](RELIABILITY.md).
 
-Les modifications sont proposées dans une branche dédiée et une PR vers `main`. Le propriétaire révise et fusionne ; aucun pipeline ou déploiement automatique.
+Les modifications sont proposées dans une branche dédiée et une PR vers `main`. Le propriétaire révise et fusionne ; le workflow CI/CD autorisé déploie uniquement la démo NAS séparée après fusion sur main.
 
 6. **Installation et parcours quotidiens** : guide self-hosting complet, configurations Caddy/proxy, génération privée des secrets, recette réelle, rubriques de paramètres, journée complète du calendrier, déplacement protégé et double authentification TOTP avec codes de secours (migration 0007).
 
@@ -17,4 +17,5 @@ Les modifications sont proposées dans une branche dédiée et une PR vers `main
 
 - Passkeys, intégrations domotiques et échanges de calendriers selon les usages.
 
-L’interface utilise exclusivement les données réelles de PostgreSQL. Aucun jeu de démonstration en production. Les limites actuelles et instructions de migration sont décrites dans HOME-MODULES.md et README.md.
+L’interface utilise exclusivement les données réelles de PostgreSQL. Aucun jeu de démonstration dans une instance personnelle réelle. La démo NAS utilise une base et des volumes distincts ; voir [NAS-DEMO.md](NAS-DEMO.md). Les limites actuelles et instructions de migration sont décrites dans HOME-MODULES.md et README.md.
+

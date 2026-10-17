@@ -1,0 +1,15 @@
+services:
+  github-runner-lehub:
+    build:
+      context: ../github-runner-onetask-web
+    container_name: github-runner-lehub
+    restart: unless-stopped
+    environment:
+      REPO_URL: https://github.com/Yuss9/lehub
+      RUNNER_NAME: jarvis-lehub
+      RUNNER_LABELS: lehub-web
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+    volumes:
+      - ./runner:/runner
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /volume1/docker/lehub-demo:/volume1/docker/lehub-demo

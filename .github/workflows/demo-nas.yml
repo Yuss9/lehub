@@ -1,0 +1,93 @@
+name: LeHub - CI, GHCR and NAS demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: lehub-demo-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-publish-deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, lehub-web]
+    timeout-minutes: 90
+    env:
+      DOCKER_CONFIG: ${{ runner.temp }}/lehub-docker-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check NAS configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker version
+          docker compose version
+          test -r /volume1/docker/lehub-demo/compose.yaml
+          test -r /volume1/docker/lehub-demo/.env
+          docker network inspect public-sites-network >/dev/null
+
+      - name: Lint, TypeScript, unit tests and Next.js build
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull -f Dockerfile.ci \
+            -t "lehub-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" .
+
+      - name: Build explicit Docker targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in 'runner lehub' 'worker lehub-worker' 'migrate lehub-migrate'; do
+            read -r target image <<< "$pair"
+            docker build --pull --target "$target" \
+              --label "org.opencontainers.image.source=https://github.com/Yuss9/lehub" \
+              --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+              -t "ghcr.io/yuss9/${image}:sha-${GITHUB_SHA}" .
+          done
+
+      - name: Authenticate to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$DOCKER_CONFIG"
+          chmod 700 "$DOCKER_CONFIG"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Publish images
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in lehub lehub-worker lehub-migrate; do
+            docker push "ghcr.io/yuss9/${image}:sha-${GITHUB_SHA}"
+          done
+
+      - name: Deploy exact commit
+        shell: bash
+        run: |
+          IMAGE_TAG="sha-${GITHUB_SHA}" bash scripts/deploy-demo.sh
+
+      - name: Mark successful demo images
+        shell: bash
+        run: |
+          set -euo pipefail
+          for image in lehub lehub-worker lehub-migrate; do
+            docker tag "ghcr.io/yuss9/${image}:sha-${GITHUB_SHA}" "ghcr.io/yuss9/${image}:demo"
+            docker push "ghcr.io/yuss9/${image}:demo"
+          done
+
+      - name: Clean credentials and CI image
+        if: always()
+        shell: bash
+        run: |
+          docker logout ghcr.io || true
+          rm -f "$DOCKER_CONFIG/config.json"
+          docker image rm "lehub-ci:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" || true

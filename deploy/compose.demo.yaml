@@ -1,0 +1,94 @@
+name: lehub-demo
+
+x-runtime: &runtime
+  DATABASE_URL: postgresql://lehub:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/lehub_demo
+  BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Set BETTER_AUTH_URL}
+  DOCUMENTS_DIR: /app/data/documents
+
+services:
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lehub
+      POSTGRES_DB: lehub_demo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U lehub -d lehub_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt: [no-new-privileges:true]
+
+  migrate:
+    image: ghcr.io/yuss9/lehub-migrate:${IMAGE_TAG:?Set IMAGE_TAG}
+    environment:
+      <<: *runtime
+    profiles: [tools]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  seed:
+    image: ghcr.io/yuss9/lehub-worker:${IMAGE_TAG:?Set IMAGE_TAG}
+    command: [node, scripts/seed-demo.mjs]
+    environment:
+      <<: *runtime
+      DEMO_MODE: "true"
+      DEMO_PASSWORD: ${DEMO_PASSWORD:?Set DEMO_PASSWORD}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:?Set DEMO_ADMIN_PASSWORD}
+    profiles: [tools]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    image: ghcr.io/yuss9/lehub:${IMAGE_TAG:?Set IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      <<: *runtime
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET}
+      SETUP_KEY: ${SETUP_KEY:?Set SETUP_KEY}
+    volumes:
+      - documents:/app/data/documents
+    networks:
+      default:
+      proxy:
+        aliases: [lehub-demo-app]
+    expose: ["3000"]
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 12
+    security_opt: [no-new-privileges:true]
+
+  worker:
+    image: ghcr.io/yuss9/lehub-worker:${IMAGE_TAG:?Set IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      <<: *runtime
+      OCR_ENABLED: "true"
+      OCR_BATCH_SIZE: "5"
+      OCR_CONCURRENCY: "1"
+    volumes:
+      - documents:/app/data/documents
+    depends_on:
+      db:
+        condition: service_healthy
+    security_opt: [no-new-privileges:true]
+
+networks:
+  proxy:
+    external: true
+    name: public-sites-network
+
+volumes:
+  postgres_data:
+  documents:
