@@ -1,0 +1,24 @@
+{
+    email yurtseven68210@hotmail.fr
+}
+
+sarah-godefroy.yuss.dev {
+    encode zstd gzip
+    reverse_proxy sarah-portfolio:3000
+}
+
+theo-esteves.yuss.dev {
+    encode zstd gzip
+    reverse_proxy theo-portfolio:3000
+}
+
+onetask.yuss.dev {
+    encode zstd gzip
+    reverse_proxy onetask-landing-page:3000
+}
+
+lehub-demo.yuss.dev {
+    encode zstd gzip
+    header X-Robots-Tag "noindex, nofollow"
+    reverse_proxy lehub:3000
+}
