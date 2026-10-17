@@ -395,7 +395,7 @@ Les tests navigateur démarrent le serveur standalone et une base PGlite **jetab
 
 PGlite n’est pas une validation native : `TEST_POSTGRES_URL=postgresql://… npm run test:postgres` crée/supprime sa propre base de test, avec deux connexions concurrentes. Ne pas lui fournir la production. Les mises à jour de schéma passent par `npm run db:generate`, inspection/versionnement de `drizzle/`, puis migrations explicites. Ne pas utiliser `drizzle-kit push` en production ni appliquer aveuglément `npm audit fix --force`.
 
-Contributions : lire [AGENTS.md](AGENTS.md), branche dédiée, PR vers main, tests, captures et instructions de migration. Le propriétaire valide et fusionne ; le workflow NAS déploie uniquement la démo séparée après fusion sur main. Voir [ROADMAP.md](docs/ROADMAP.md) et [HOME-MODULES.md](docs/HOME-MODULES.md).
+Contributions : lire [AGENTS.md](AGENTS.md), branche dédiée, PR vers main, tests, captures et instructions de migration. Le propriétaire valide et fusionne ; le workflow NAS déploie uniquement la démo dans public-sites après fusion sur main. Voir [ROADMAP.md](docs/ROADMAP.md) et [HOME-MODULES.md](docs/HOME-MODULES.md).
 
 Références officielles : [variables Compose](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/), [HTTPS avec Caddy](https://caddyserver.com/docs/quick-starts/https), [2FA Better Auth](https://better-auth.com/docs/plugins/2fa).
 

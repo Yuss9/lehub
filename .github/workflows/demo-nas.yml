@@ -29,8 +29,9 @@ jobs:
           set -euo pipefail
           docker version
           docker compose version
-          test -r /volume1/docker/lehub-demo/compose.yaml
-          test -r /volume1/docker/lehub-demo/.env
+          test -r /volume1/docker/web/docker-compose.yml
+          test -r /volume1/docker/web/lehub/app.env
+          test -r /volume1/docker/web/lehub/postgres.env
           docker network inspect public-sites-network >/dev/null
 
       - name: Lint, TypeScript, unit tests and Next.js build
@@ -73,15 +74,15 @@ jobs:
       - name: Deploy exact commit
         shell: bash
         run: |
-          IMAGE_TAG="sha-${GITHUB_SHA}" bash scripts/deploy-demo.sh
+          LEHUB_IMAGE_TAG="sha-${GITHUB_SHA}" bash scripts/deploy-demo.sh
 
       - name: Mark successful demo images
         shell: bash
         run: |
           set -euo pipefail
           for image in lehub lehub-worker lehub-migrate; do
-            docker tag "ghcr.io/yuss9/${image}:sha-${GITHUB_SHA}" "ghcr.io/yuss9/${image}:demo"
-            docker push "ghcr.io/yuss9/${image}:demo"
+            docker tag "ghcr.io/yuss9/${image}:sha-${GITHUB_SHA}" "ghcr.io/yuss9/${image}:latest"
+            docker push "ghcr.io/yuss9/${image}:latest"
           done
 
       - name: Clean credentials and CI image

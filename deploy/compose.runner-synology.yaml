@@ -1,3 +1,5 @@
+# Install as /volume1/docker/github-runner-lehub/compose.yaml.
+# Reuse the OneTask runner build recipe, never its registration/data.
 services:
   github-runner-lehub:
     build:
@@ -12,4 +14,5 @@ services:
     volumes:
       - ./runner:/runner
       - /var/run/docker.sock:/var/run/docker.sock
-      - /volume1/docker/lehub-demo:/volume1/docker/lehub-demo
+      - /volume1/docker/web/docker-compose.yml:/volume1/docker/web/docker-compose.yml:ro
+      - /volume1/docker/web/lehub:/volume1/docker/web/lehub

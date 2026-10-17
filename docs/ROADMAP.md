@@ -9,7 +9,7 @@
 
 5. **Fiabilité des appareils et exploitation** : désactivation hors ligne par foyer avec confirmation atomique, abonnements push liés aux sessions, reçus par appareil, révocation d’accès, traces des corrections, lots OCR, copie distante vérifiée et surveillance indépendante. Voir [RELIABILITY.md](RELIABILITY.md).
 
-Les modifications sont proposées dans une branche dédiée et une PR vers `main`. Le propriétaire révise et fusionne ; le workflow CI/CD autorisé déploie uniquement la démo NAS séparée après fusion sur main.
+Les modifications sont proposées dans une branche dédiée et une PR vers `main`. Le propriétaire révise et fusionne ; le workflow CI/CD autorisé déploie uniquement la démo NAS dans public-sites après fusion sur main.
 
 6. **Installation et parcours quotidiens** : guide self-hosting complet, configurations Caddy/proxy, génération privée des secrets, recette réelle, rubriques de paramètres, journée complète du calendrier, déplacement protégé et double authentification TOTP avec codes de secours (migration 0007).
 
