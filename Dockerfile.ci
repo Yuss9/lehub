@@ -1,7 +1,14 @@
 FROM node:24-bookworm-slim
 WORKDIR /app
+# Integration tests invoke OpenSSL for SMTP TLS and Poppler for PDF extraction.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run lint && npm run typecheck && npm test && npm run build
+RUN npm run lint
+RUN npm run typecheck
+RUN npm test
+RUN npm run build

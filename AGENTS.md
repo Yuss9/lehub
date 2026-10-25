@@ -1,9 +1,9 @@
 # lehub
 
-- Read README.md and docs/ROADMAP.md before changing scope.
+- Read README.md before changing scope.
 - Every batch starts from up-to-date main in a feature/fix/docs/refactor branch.
 - Never push to main, merge a PR or enable auto-merge. The owner reviews and merges.
-- The owner-authorized NAS demo workflow may build/publish GHCR images and deploy the LeHub services in the public-sites stack on main. Never execute untrusted PR code on the NAS runner.
+- CI may build and publish GHCR images on main; it must not deploy or run production migrations. Run PR validation on GitHub-hosted runners, never on the self-hosted runner.
 - Keep household authorization on the server, including file downloads.
 - Use PostgreSQL and versioned Drizzle migrations; no production mock data.
 - French UI, accessible controls, system fonts, quiet visual hierarchy.
