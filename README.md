@@ -2,7 +2,7 @@
 
 **Le foyer, simplement.** Application gratuite et privée à héberger chez soi : pièces, équipements, garanties, entretiens récurrents, courses partagées hors ligne et documents avec OCR. Interface française, thèmes clair/sombre et installation sur téléphone.
 
-Next.js 16 · React 19 · Better Auth · Drizzle · PostgreSQL 17 · Docker Compose. Les versions exactes sont verrouillées dans `package-lock.json`. Aucun service cloud métier obligatoire, aucune inscription publique. L'installation personnelle reste manuelle ; une [CI sur NAS avec publication GHCR](docs/NAS-DEMO.md) est disponible séparément ; le déploiement sera configuré ensuite.
+Next.js 16 · React 19 · Better Auth · Drizzle · PostgreSQL 17 · Docker Compose. Les versions exactes sont verrouillées dans `package-lock.json`. Aucun service cloud métier obligatoire, aucune inscription publique. L'installation personnelle reste manuelle. La CI vérifie le projet et publie les images Docker dans GHCR.
 
 ## Sommaire
 
@@ -395,7 +395,19 @@ Les tests navigateur démarrent le serveur standalone et une base PGlite **jetab
 
 PGlite n’est pas une validation native : `TEST_POSTGRES_URL=postgresql://… npm run test:postgres` crée/supprime sa propre base de test, avec deux connexions concurrentes. Ne pas lui fournir la production. Les mises à jour de schéma passent par `npm run db:generate`, inspection/versionnement de `drizzle/`, puis migrations explicites. Ne pas utiliser `drizzle-kit push` en production ni appliquer aveuglément `npm audit fix --force`.
 
-Contributions : lire [AGENTS.md](AGENTS.md), branche dédiée, PR vers main, tests, captures et instructions de migration. Le propriétaire valide et fusionne ; le workflow NAS construit et publie les images GHCR après fusion sur main, sans déploiement. Voir [ROADMAP.md](docs/ROADMAP.md) et [HOME-MODULES.md](docs/HOME-MODULES.md).
+Contributions : lire [AGENTS.md](AGENTS.md), branche dédiée, PR vers main, tests, captures et instructions de migration. Le propriétaire valide et fusionne ; le workflow NAS construit et publie les images GHCR après fusion sur main, sans déploiement. Voir [HOME-MODULES.md](docs/HOME-MODULES.md).
 
 Références officielles : [variables Compose](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/), [HTTPS avec Caddy](https://caddyserver.com/docs/quick-starts/https), [2FA Better Auth](https://better-auth.com/docs/plugins/2fa).
+
+## CI et images Docker
+
+Le workflow `.github/workflows/ci.yml` exécute lint, TypeScript, tests et build Next.js dans `Dockerfile.ci`, puis construit les cibles Docker `runner`, `worker` et `migrate`.
+
+- **PR vers main** : validation sur un runner GitHub, sans publication.
+- **Push ou lancement manuel sur main** : validation et publication sur le runner existant portant les labels `self-hosted`, `linux`, `lehub-web`.
+- **Images** : `ghcr.io/yuss9/lehub`, `ghcr.io/yuss9/lehub-worker`, `ghcr.io/yuss9/lehub-migrate`.
+- **Tags** : `sha-<commit complet>` et `latest`, publiés uniquement après validation et construction des trois images. Utiliser les SHA pour une version précise ; les mises à jour des trois tags latest ne sont pas atomiques.
+- **Authentification** : `GITHUB_TOKEN` avec `packages: write`. Si les packages existent déjà, autoriser le dépôt dans leur accès Actions.
+- **Runner** : Linux, Bash, Git, runner GitHub à jour compatible avec checkout v6 et client Docker avec accès au moteur. Images natives de l'architecture du moteur Docker. Le socket Docker donne accès au NAS ; ne jamais y exécuter de code de PR.
+- **Périmètre** : aucune migration ni aucun déploiement automatique. Tests navigateur et harnais PostgreSQL natif restent séparés.
 
