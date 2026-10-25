@@ -2,7 +2,7 @@
 
 **Le foyer, simplement.** Application gratuite et privée à héberger chez soi : pièces, équipements, garanties, entretiens récurrents, courses partagées hors ligne et documents avec OCR. Interface française, thèmes clair/sombre et installation sur téléphone.
 
-Next.js 16 · React 19 · Better Auth · Drizzle · PostgreSQL 17 · Docker Compose. Les versions exactes sont verrouillées dans `package-lock.json`. Aucun service cloud métier obligatoire, aucune inscription publique. L'installation personnelle reste manuelle ; une [démo NAS avec CI/CD et GHCR](docs/NAS-DEMO.md) est disponible séparément.
+Next.js 16 · React 19 · Better Auth · Drizzle · PostgreSQL 17 · Docker Compose. Les versions exactes sont verrouillées dans `package-lock.json`. Aucun service cloud métier obligatoire, aucune inscription publique. L'installation personnelle reste manuelle ; une [CI sur NAS avec publication GHCR](docs/NAS-DEMO.md) est disponible séparément ; le déploiement sera configuré ensuite.
 
 ## Sommaire
 
@@ -395,7 +395,7 @@ Les tests navigateur démarrent le serveur standalone et une base PGlite **jetab
 
 PGlite n’est pas une validation native : `TEST_POSTGRES_URL=postgresql://… npm run test:postgres` crée/supprime sa propre base de test, avec deux connexions concurrentes. Ne pas lui fournir la production. Les mises à jour de schéma passent par `npm run db:generate`, inspection/versionnement de `drizzle/`, puis migrations explicites. Ne pas utiliser `drizzle-kit push` en production ni appliquer aveuglément `npm audit fix --force`.
 
-Contributions : lire [AGENTS.md](AGENTS.md), branche dédiée, PR vers main, tests, captures et instructions de migration. Le propriétaire valide et fusionne ; le workflow NAS déploie uniquement la démo dans public-sites après fusion sur main. Voir [ROADMAP.md](docs/ROADMAP.md) et [HOME-MODULES.md](docs/HOME-MODULES.md).
+Contributions : lire [AGENTS.md](AGENTS.md), branche dédiée, PR vers main, tests, captures et instructions de migration. Le propriétaire valide et fusionne ; le workflow NAS construit et publie les images GHCR après fusion sur main, sans déploiement. Voir [ROADMAP.md](docs/ROADMAP.md) et [HOME-MODULES.md](docs/HOME-MODULES.md).
 
 Références officielles : [variables Compose](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/), [HTTPS avec Caddy](https://caddyserver.com/docs/quick-starts/https), [2FA Better Auth](https://better-auth.com/docs/plugins/2fa).
 
